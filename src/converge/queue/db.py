@@ -1,197 +1,162 @@
-"""Database task queue implementation backed by SQLite-compatible SQL."""
+"""SQLAlchemy-backed task queue implementation."""
 
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import cast
 from uuid import uuid4
+
+from sqlalchemy import DateTime, Integer, String, Text, create_engine, select
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from converge.core.config import load_queue_settings
 from converge.queue.base import TaskQueue
 from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult, TaskStatus
 
 
+class Base(DeclarativeBase):
+    """Declarative SQLAlchemy base for queue tables."""
+
+
+class TaskRow(Base):
+    """Persistent task row for database queue backends."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_json: Mapped[str] = mapped_column(Text, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    artifacts_dir: Mapped[str | None] = mapped_column(Text, nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class DatabaseTaskQueue(TaskQueue):
-    """Database queue implementation using a SQLALCHEMY_DATABASE_URI connection string."""
+    """Database queue implementation for SQLite and PostgreSQL."""
 
     def __init__(self, database_uri: str) -> None:
-        self._db_path = self._parse_sqlite_path(database_uri)
+        self._engine = create_engine(database_uri, future=True, pool_pre_ping=True)
+        self._session_factory = sessionmaker(bind=self._engine, expire_on_commit=False)
+        self._dialect_name = self._engine.url.get_backend_name()
         self._max_attempts = load_queue_settings().worker_max_attempts
-        self._initialize_schema()
+        Base.metadata.create_all(self._engine)
 
     def enqueue(self, request: TaskRequest) -> TaskRecord:
-        """Enqueue a new pending task record."""
-        now = self._now_iso()
-        task_id = str(uuid4())
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO tasks (
-                    id, status, created_at, updated_at, attempts, request_json,
-                    last_error, artifacts_dir, claimed_at, claim_token
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    TaskStatus.PENDING.value,
-                    now,
-                    now,
-                    0,
-                    request.model_dump_json(),
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
-            )
-            conn.commit()
-        return self.get(task_id)
+        """Enqueue a new pending task."""
+        now = self._now()
+        task_row = TaskRow(
+            id=str(uuid4()),
+            status=TaskStatus.PENDING.value,
+            created_at=now,
+            updated_at=now,
+            attempts=0,
+            request_json=request.model_dump_json(),
+            last_error=None,
+            artifacts_dir=None,
+            claimed_at=None,
+            claim_token=None,
+        )
+        with self._session_factory() as session:
+            session.add(task_row)
+            session.commit()
+            return self._to_record(task_row)
 
     def poll_and_claim(self, limit: int) -> list[TaskRecord]:
-        """Poll pending tasks and claim them in one immediate transaction."""
-        now = self._now_iso()
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            rows = conn.execute(
-                """
-                SELECT id FROM tasks
-                WHERE status = ?
-                ORDER BY created_at ASC
-                LIMIT ?
-                """,
-                (TaskStatus.PENDING.value, limit),
-            ).fetchall()
+        """Poll pending tasks and claim up to ``limit`` tasks atomically.
 
-            claimed_ids = [row[0] for row in rows]
-            for task_id in claimed_ids:
-                conn.execute(
-                    """
-                    UPDATE tasks
-                    SET status = ?, claimed_at = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (TaskStatus.CLAIMED.value, now, now, task_id),
+        PostgreSQL uses row-level locks with ``SKIP LOCKED`` to allow concurrent
+        workers without duplicate claims. SQLite falls back to a single
+        transaction with immediate updates.
+        """
+        now = self._now()
+        with self._session_factory() as session:
+            if self._dialect_name in {"postgresql", "postgres"}:
+                query = (
+                    select(TaskRow)
+                    .where(TaskRow.status == TaskStatus.PENDING.value)
+                    .order_by(TaskRow.created_at.asc())
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
                 )
-            conn.commit()
+            else:
+                query = (
+                    select(TaskRow)
+                    .where(TaskRow.status == TaskStatus.PENDING.value)
+                    .order_by(TaskRow.created_at.asc())
+                    .limit(limit)
+                )
 
-        return [self.get(task_id) for task_id in claimed_ids]
+            rows = session.scalars(query).all()
+            for row in rows:
+                row.status = TaskStatus.CLAIMED.value
+                row.claimed_at = now
+                row.updated_at = now
+            session.commit()
+            return [self._to_record(row) for row in rows]
 
     def mark_running(self, task_id: str) -> None:
         """Mark a claimed task as running."""
-        with self._connect() as conn:
-            updated = conn.execute(
-                "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-                (TaskStatus.RUNNING.value, self._now_iso(), task_id),
-            )
-            if updated.rowcount == 0:
-                raise ValueError(f"Task not found: {task_id}")
-            conn.commit()
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            row.status = TaskStatus.RUNNING.value
+            row.updated_at = self._now()
+            session.commit()
 
     def complete(self, task_id: str, result: TaskResult) -> None:
-        """Mark task completion with final status and artifacts."""
-        with self._connect() as conn:
-            updated = conn.execute(
-                """
-                UPDATE tasks
-                SET status = ?, artifacts_dir = ?, last_error = NULL, updated_at = ?
-                WHERE id = ?
-                """,
-                (result.status.value, result.artifacts_dir, self._now_iso(), task_id),
-            )
-            if updated.rowcount == 0:
-                raise ValueError(f"Task not found: {task_id}")
-            conn.commit()
+        """Mark task completion with final status and artifacts location."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            row.status = result.status.value
+            row.artifacts_dir = result.artifacts_dir
+            row.last_error = None
+            row.updated_at = self._now()
+            session.commit()
 
     def fail(self, task_id: str, error: str, retryable: bool) -> None:
         """Mark task failure and requeue while attempts remain."""
-        task = self.get(task_id)
-        attempts = task.attempts + 1
-        status = (
-            TaskStatus.PENDING.value
-            if retryable and attempts < self._max_attempts
-            else TaskStatus.FAILED.value
-        )
-        claimed_at = None if status == TaskStatus.PENDING.value else self._now_iso()
-
-        with self._connect() as conn:
-            updated = conn.execute(
-                """
-                UPDATE tasks
-                SET attempts = ?, last_error = ?, status = ?, claimed_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (attempts, error, status, claimed_at, self._now_iso(), task_id),
-            )
-            if updated.rowcount == 0:
-                raise ValueError(f"Task not found: {task_id}")
-            conn.commit()
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            attempts = row.attempts + 1
+            row.attempts = attempts
+            row.last_error = error
+            row.updated_at = self._now()
+            if retryable and attempts < self._max_attempts:
+                row.status = TaskStatus.PENDING.value
+                row.claimed_at = None
+            else:
+                row.status = TaskStatus.FAILED.value
+            session.commit()
 
     def get(self, task_id: str) -> TaskRecord:
-        """Get the latest task record."""
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT id, status, created_at, updated_at, attempts, request_json,
-                       last_error, artifacts_dir
-                FROM tasks
-                WHERE id = ?
-                """,
-                (task_id,),
-            ).fetchone()
-            if row is None:
-                raise ValueError(f"Task not found: {task_id}")
+        """Get a task by id."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            return self._to_record(row)
 
+    def _get_row(self, session: Session, task_id: str) -> TaskRow:
+        row = cast(TaskRow | None, session.get(TaskRow, task_id))
+        if row is None:
+            raise ValueError(f"Task not found: {task_id}")
+        return row
+
+    def _to_record(self, row: TaskRow) -> TaskRecord:
         return TaskRecord(
-            id=row[0],
-            status=TaskStatus(row[1]),
-            created_at=self._parse_datetime(row[2]),
-            updated_at=self._parse_datetime(row[3]),
-            attempts=row[4],
-            request=TaskRequest.model_validate(json.loads(row[5])),
-            last_error=row[6],
-            artifacts_dir=row[7],
+            id=row.id,
+            status=TaskStatus(row.status),
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            attempts=row.attempts,
+            request=TaskRequest.model_validate(json.loads(row.request_json)),
+            last_error=row.last_error,
+            artifacts_dir=row.artifacts_dir,
         )
 
-    def _initialize_schema(self) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS tasks (
-                    id TEXT PRIMARY KEY,
-                    status TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    attempts INTEGER NOT NULL,
-                    request_json TEXT NOT NULL,
-                    last_error TEXT,
-                    artifacts_dir TEXT,
-                    claimed_at TEXT,
-                    claim_token TEXT
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks(status, created_at)"
-            )
-            conn.commit()
-
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _parse_sqlite_path(self, database_uri: str) -> Path:
-        prefix = "sqlite:///"
-        if not database_uri.startswith(prefix):
-            raise ValueError("Only sqlite:/// URIs are supported in this iteration")
-        db_path = Path(database_uri[len(prefix) :])
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        return db_path
-
-    def _now_iso(self) -> str:
-        return datetime.now(timezone.utc).isoformat()
-
-    def _parse_datetime(self, value: str) -> datetime:
-        return datetime.fromisoformat(value)
+    def _now(self) -> datetime:
+        return datetime.now(timezone.utc)

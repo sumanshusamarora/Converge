@@ -24,7 +24,9 @@ def _set_queue_env(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
 
 
-def test_enqueue_creates_pending_task(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
+def test_enqueue_creates_pending_task(
+    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
+) -> None:
     _set_queue_env(monkeypatch, sqlite_uri)
     queue = DatabaseTaskQueue(sqlite_uri)
 
@@ -34,7 +36,9 @@ def test_enqueue_creates_pending_task(monkeypatch: pytest.MonkeyPatch, sqlite_ur
     assert task.attempts == 0
 
 
-def test_poll_and_claim_updates_status(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
+def test_poll_and_claim_updates_status(
+    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
+) -> None:
     _set_queue_env(monkeypatch, sqlite_uri)
     queue = DatabaseTaskQueue(sqlite_uri)
     task = queue.enqueue(TaskRequest(goal="Goal", repos=["repo_a"]))
@@ -91,3 +95,16 @@ def test_worker_run_once_completes_task_and_stores_artifacts(
     assert stored.status == TaskStatus.SUCCEEDED
     assert stored.artifacts_dir is not None
     assert Path(stored.artifacts_dir).exists()
+
+
+def test_postgres_uri_is_supported_by_backend_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Postgres URIs should pass backend parsing (even if driver/DB is unavailable)."""
+    monkeypatch.setenv("CONVERGE_QUEUE_BACKEND", "db")
+    monkeypatch.setenv("CONVERGE_WORKER_MAX_ATTEMPTS", "3")
+
+    with pytest.raises(Exception) as exc_info:  # noqa: BLE001
+        DatabaseTaskQueue("postgresql://user:pass@localhost:5432/converge")
+
+    assert "Only sqlite" not in str(exc_info.value)
