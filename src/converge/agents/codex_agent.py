@@ -8,6 +8,7 @@ and requires explicit opt-in via CONVERGE_CODEX_ENABLED.
 import logging
 import os
 from pathlib import Path
+from typing import Literal
 
 from converge.agents.base import AgentProvider, AgentResult, AgentTask, CodingAgent
 
@@ -134,16 +135,16 @@ Identify any risks or questions requiring human judgment.
             proposed_changes.append("Update tests for new/modified functionality")
         else:
             proposed_changes.append("Review repository structure and add necessary files")
-            questions.append("Repository type unclear; manual analysis required")
+            # Only mark as question if we truly can't determine type
+            if not task.repo.signals:
+                questions.append("Repository type unclear; manual analysis required")
 
         if not Path(task.repo.path).exists():
             questions.append(f"Repository path {task.repo.path} not found; cannot analyze")
 
-        if not task.repo.readme_excerpt:
-            questions.append("No README excerpt provided; consider adding context")
-
-        # If we have questions, mark as HITL_REQUIRED
-        status: AgentResult["status"] = "HITL_REQUIRED" if questions else "OK"
+        # README missing is informational, not a blocker for heuristic planning
+        # (only mark as HITL_REQUIRED if we have real blockers)
+        status: Literal["OK", "HITL_REQUIRED", "FAILED"] = "HITL_REQUIRED" if questions else "OK"
 
         summary = f"Heuristic plan for {task.repo.kind or 'unknown'} repository at {task.repo.path}"
 

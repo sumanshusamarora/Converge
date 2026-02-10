@@ -94,8 +94,10 @@ def coordinate(
             os.environ["OPIK_TRACK_DISABLE"] = "true"
         configure_opik()
 
-        # Determine agent_provider from flag or env
-        final_agent_provider = agent_provider or os.getenv("CONVERGE_AGENT_PROVIDER", "codex")
+        # Determine agent_provider from flag or env (always has a value)
+        final_agent_provider = agent_provider if agent_provider else os.getenv(
+            "CONVERGE_AGENT_PROVIDER", "codex"
+        )
 
         config = ConvergeConfig(
             goal=goal,

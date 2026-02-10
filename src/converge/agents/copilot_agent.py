@@ -7,6 +7,7 @@ Instead, it produces human-readable prompts and proposals.
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from converge.agents.base import AgentProvider, AgentResult, AgentTask, CodingAgent
 
@@ -48,7 +49,7 @@ class GitHubCopilotAgent(CodingAgent):
         )
 
         # If we have questions, mark as HITL_REQUIRED
-        status: AgentResult["status"] = "HITL_REQUIRED" if questions else "OK"
+        status: Literal["OK", "HITL_REQUIRED", "FAILED"] = "HITL_REQUIRED" if questions else "OK"
 
         raw_data: dict[str, object] = {
             "copilot_prompt": prompt,
@@ -154,10 +155,8 @@ Keep proposals minimal and surgical. Prefer existing patterns.
         if not Path(task.repo.path).exists():
             questions.append(f"Repository at {task.repo.path} does not exist")
 
-        if not task.repo.signals:
-            questions.append("No technology signals detected; manual inspection needed")
-
-        if not task.repo.kind:
-            questions.append("Repository type unknown; classify as backend/frontend/service/docs")
+        # Only mark as question if we truly can't determine type
+        if not task.repo.signals and not task.repo.kind:
+            questions.append("No technology signals or type detected; manual inspection needed")
 
         return questions

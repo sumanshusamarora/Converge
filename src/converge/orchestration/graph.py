@@ -369,12 +369,12 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
             prompt_path = prompts_dir / prompt_filename
 
             # Write a placeholder noting the prompt would be here
-            prompt_content = f"""# {provider.upper()} Prompt for {plan['repo_path']}
+            prompt_content = f"""# {provider.upper()} Prompt for {plan["repo_path"]}
 
-Goal: {state['goal']}
-Status: {plan['status']}
+Goal: {state["goal"]}
+Status: {plan["status"]}
 
-Summary: {plan['summary']}
+Summary: {plan["summary"]}
 
 Proposed Changes:
 """
