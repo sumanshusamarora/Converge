@@ -132,7 +132,7 @@ def create_app() -> FastAPI:
         try:
             if not hasattr(queue, 'resolve_hitl'):
                 raise HTTPException(status_code=501, detail="resolve_hitl not implemented")
-            queue.resolve_hitl(task_id, json.dumps(resolution))
+            queue.resolve_hitl(task_id, resolution)
             return {"status": "ok", "message": f"Task {task_id} resolved and requeued"}
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
