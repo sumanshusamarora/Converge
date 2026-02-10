@@ -426,7 +426,7 @@ Proposed Changes:
             (repo_plan_dir / "plan.md").write_text("\n".join(plan_md_lines), encoding="utf-8")
 
             # 2. Write copilot-prompt.txt - VS Code ready prompt
-            copilot_prompt = plan["raw"].get("copilot_prompt", "")
+            copilot_prompt = plan.get("raw", {}).get("copilot_prompt", "")
             if copilot_prompt:
                 (repo_plan_dir / "copilot-prompt.txt").write_text(
                     str(copilot_prompt), encoding="utf-8"
@@ -447,7 +447,8 @@ Proposed Changes:
 
             # 3. Write commands.sh - execution hints (if available)
             commands = []
-            if "pyproject.toml" in plan["raw"].get("signals", []):
+            signals = plan.get("raw", {}).get("signals", [])
+            if "pyproject.toml" in signals:
                 commands.extend(
                     [
                         "# Python project detected",
@@ -465,7 +466,7 @@ Proposed Changes:
                         "# ruff check .",
                     ]
                 )
-            elif "package.json" in plan["raw"].get("signals", []):
+            elif "package.json" in signals:
                 commands.extend(
                     [
                         "# Node project detected",
