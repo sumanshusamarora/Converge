@@ -15,14 +15,14 @@ class ConvergeConfig:
         goal: The high-level goal to achieve across repositories
         repos: List of repository identifiers to coordinate
         max_rounds: Maximum number of convergence rounds (default: 2)
-        output_dir: Directory for output artifacts (default: ./converge-output)
+        output_dir: Base directory for output artifacts (default: .converge)
         log_level: Logging level (default: INFO)
     """
 
     goal: str
     repos: list[str]
     max_rounds: int = 2
-    output_dir: str = "./converge-output"
+    output_dir: str = ".converge"
     log_level: str = "INFO"
     metadata: dict[str, Any] = field(default_factory=dict)
 

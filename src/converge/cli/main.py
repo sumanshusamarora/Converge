@@ -43,8 +43,8 @@ def cli() -> None:
 )
 @click.option(
     "--output-dir",
-    default="./converge-output",
-    help="Directory for output artifacts (default: ./converge-output)",
+    default=".converge",
+    help="Base directory for output artifacts (default: .converge)",
 )
 @click.option(
     "--log-level",
@@ -102,7 +102,7 @@ def coordinate(
         logger.info("=" * 80)
         logger.info("Status: %s", final_state.status.value)
         logger.info("Rounds Executed: %d", final_state.round_number)
-        logger.info("Artifacts Location: %s", config.output_dir)
+        logger.info("Artifacts Location: %s", coordinator.run_dir)
 
         if final_state.escalation_reason:
             logger.warning("ESCALATION REQUIRED: %s", final_state.escalation_reason)

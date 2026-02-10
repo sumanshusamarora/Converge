@@ -55,9 +55,16 @@ def test_coordinate_command_missing_repos() -> None:
 
 
 def test_coordinate_command_basic(tmp_path: Path) -> None:
-    """Test basic coordinate command execution."""
+    """Test basic coordinate command execution with run artifacts."""
     runner = CliRunner()
-    output_dir = tmp_path
+    output_dir = tmp_path / "out"
+
+    api_dir = tmp_path / "api"
+    web_dir = tmp_path / "web"
+    api_dir.mkdir()
+    web_dir.mkdir()
+    (api_dir / "pyproject.toml").write_text("[project]\nname='api'\n", encoding="utf-8")
+    (web_dir / "package.json").write_text('{"name":"web"}', encoding="utf-8")
 
     result = runner.invoke(
         cli,
@@ -66,32 +73,9 @@ def test_coordinate_command_basic(tmp_path: Path) -> None:
             "--goal",
             "Add discount code support",
             "--repos",
-            "api",
+            str(api_dir),
             "--repos",
-            "web",
-            "--output-dir",
-            str(output_dir),
-            "--log-level",
-            "ERROR",  # Suppress logs in test
-        ],
-    )
-
-    assert result.exit_code in [0, 2]  # 0 = converged, 2 = escalated
-
-
-def test_coordinate_command_single_repo(tmp_path: Path) -> None:
-    """Test coordinate with single repository."""
-    runner = CliRunner()
-    output_dir = tmp_path
-
-    result = runner.invoke(
-        cli,
-        [
-            "coordinate",
-            "--goal",
-            "Update API",
-            "--repos",
-            "backend",
+            str(web_dir),
             "--output-dir",
             str(output_dir),
             "--log-level",
@@ -99,13 +83,21 @@ def test_coordinate_command_single_repo(tmp_path: Path) -> None:
         ],
     )
 
-    assert result.exit_code in [0, 2]
+    assert result.exit_code == 0
+    run_dirs = sorted((output_dir / "runs").iterdir())
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "summary.md").exists()
+    assert (run_dirs[0] / "responsibility-matrix.md").exists()
+    assert (run_dirs[0] / "run.json").exists()
 
 
-def test_coordinate_command_custom_max_rounds(tmp_path: Path) -> None:
-    """Test coordinate with custom max rounds."""
+def test_coordinate_command_missing_repo_exit_code(tmp_path: Path) -> None:
+    """Test missing repository path returns escalation exit code 2."""
     runner = CliRunner()
-    output_dir = tmp_path
+    output_dir = tmp_path / "out"
+
+    existing_repo = tmp_path / "backend"
+    existing_repo.mkdir()
 
     result = runner.invoke(
         cli,
@@ -114,9 +106,9 @@ def test_coordinate_command_custom_max_rounds(tmp_path: Path) -> None:
             "--goal",
             "Feature X",
             "--repos",
-            "api",
-            "--max-rounds",
-            "3",
+            str(existing_repo),
+            "--repos",
+            str(tmp_path / "missing-repo"),
             "--output-dir",
             str(output_dir),
             "--log-level",
@@ -124,14 +116,13 @@ def test_coordinate_command_custom_max_rounds(tmp_path: Path) -> None:
         ],
     )
 
-    assert result.exit_code in [0, 2]
+    assert result.exit_code == 2
 
 
 def test_coordinate_command_invalid_config() -> None:
     """Test coordinate with invalid configuration."""
     runner = CliRunner()
 
-    # Empty goal should fail
     result = runner.invoke(
         cli,
         [

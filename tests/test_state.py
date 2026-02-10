@@ -1,7 +1,5 @@
 """Tests for coordination state."""
 
-
-
 from converge.orchestration.state import (
     CoordinationState,
     CoordinationStatus,
@@ -25,6 +23,7 @@ def test_coordination_state_initialization() -> None:
     assert state.proposed_split is None
     assert len(state.decisions) == 0
     assert state.escalation_reason is None
+    assert state.events == []
 
 
 def test_coordination_state_update_status() -> None:
