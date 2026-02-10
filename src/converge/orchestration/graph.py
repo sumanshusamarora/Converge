@@ -14,9 +14,11 @@ try:
 except ImportError:  # pragma: no cover - used in offline/test fallback environments
     from converge.orchestration.langgraph_compat import END, StateGraph, interrupt
 
+from converge.agents.base import AgentTask, RepoContext
+from converge.agents.factory import create_agent
 from converge.llm.openai_client import OpenAIClient, heuristic_proposal
 from converge.observability.opik_client import opik_track
-from converge.orchestration.state import EventRecord, OrchestrationState, RepositorySignal
+from converge.orchestration.state import EventRecord, OrchestrationState, RepoPlan, RepositorySignal
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,81 @@ def propose_split_node(state: OrchestrationState) -> OrchestrationState:
     return state
 
 
+@opik_track("agent_plan_node")
+def agent_plan_node(state: OrchestrationState) -> OrchestrationState:
+    """Use agent to plan changes for each repository.
+
+    Creates an agent based on state["agent_provider"], then calls
+    agent.plan() for each repository to produce structured proposals.
+    """
+    agent_provider = state.get("agent_provider", "codex")
+    agent = create_agent(agent_provider)
+
+    # Load AGENTS.md if it exists to provide instructions
+    agents_md_path = Path(__file__).parents[3] / "AGENTS.md"
+    instructions = ""
+    if agents_md_path.exists():
+        instructions = agents_md_path.read_text(encoding="utf-8")
+    else:
+        instructions = "Follow Converge best practices: minimal changes, clear ownership."
+
+    repo_plans: list[RepoPlan] = []
+
+    for repo in state["repos"]:
+        repo_path = Path(repo["path"])
+
+        # Build RepoContext
+        readme_excerpt = None
+        readme_path = repo_path / "README.md"
+        if readme_path.exists():
+            readme_content = readme_path.read_text(encoding="utf-8")
+            # Take first 500 chars as excerpt
+            readme_excerpt = readme_content[:500] if len(readme_content) > 500 else readme_content
+
+        repo_context = RepoContext(
+            path=repo_path,
+            kind=repo.get("repo_type"),
+            signals=repo.get("signals", []),
+            readme_excerpt=readme_excerpt,
+        )
+
+        # Build AgentTask
+        task = AgentTask(
+            goal=state["goal"],
+            repo=repo_context,
+            instructions=instructions,
+            max_steps=5,
+        )
+
+        # Call agent.plan()
+        result = agent.plan(task)
+
+        # Convert to RepoPlan
+        plan: RepoPlan = {
+            "repo_path": str(repo_path),
+            "provider": result.provider.value,
+            "status": result.status,
+            "summary": result.summary,
+            "proposed_changes": result.proposed_changes,
+            "questions_for_hitl": result.questions_for_hitl,
+        }
+
+        repo_plans.append(plan)
+
+        logger.info(
+            "agent_plan completed: repo=%s, provider=%s, status=%s",
+            repo_path,
+            result.provider.value,
+            result.status,
+        )
+
+    state["repo_plans"] = repo_plans
+    state["events"].append(
+        _record_event("agent_plan_node", f"generated {len(repo_plans)} repo plans")
+    )
+    return state
+
+
 @opik_track("decide_node")
 def decide_node(state: OrchestrationState) -> OrchestrationState:
     """Apply bounded convergence and decide current status."""
@@ -98,7 +175,19 @@ def decide_node(state: OrchestrationState) -> OrchestrationState:
     missing_repos = any(not repo["exists"] for repo in state["repos"])
     ambiguous = not state["proposal"].get("proposal")
 
-    if missing_repos or ambiguous:
+    # Check agent plan statuses if available
+    agent_hitl_required = False
+    agent_failed = False
+    if "repo_plans" in state and state["repo_plans"]:
+        for plan in state["repo_plans"]:
+            if plan["status"] == "FAILED":
+                agent_failed = True
+            elif plan["status"] == "HITL_REQUIRED":
+                agent_hitl_required = True
+
+    if agent_failed:
+        state["status"] = "FAILED"
+    elif missing_repos or ambiguous or agent_hitl_required:
         state["status"] = "HITL_REQUIRED"
     else:
         state["status"] = "CONVERGED"
@@ -188,6 +277,30 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
             summary_lines.append(f"- {constraint}")
         summary_lines.append("")
 
+    # Add agent plans section if available
+    if "repo_plans" in state and state["repo_plans"]:
+        summary_lines.extend(
+            [
+                "## Agent Plans",
+                "",
+            ]
+        )
+        for plan in state["repo_plans"]:
+            summary_lines.append(f"### {plan['repo_path']}")
+            summary_lines.append(f"**Provider:** {plan['provider']}")
+            summary_lines.append(f"**Status:** {plan['status']}")
+            summary_lines.append(f"**Summary:** {plan['summary']}")
+            summary_lines.append("")
+            summary_lines.append("**Proposed Changes:**")
+            for change in plan["proposed_changes"]:
+                summary_lines.append(f"- {change}")
+            if plan["questions_for_hitl"]:
+                summary_lines.append("")
+                summary_lines.append("**Questions for HITL:**")
+                for question in plan["questions_for_hitl"]:
+                    summary_lines.append(f"- {question}")
+            summary_lines.append("")
+
     summary_lines.extend(
         [
             "## Proposed Responsibility Split",
@@ -236,8 +349,45 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
         "max_rounds": state["max_rounds"],
         "human_decision": state.get("human_decision"),
         "events": state["events"],
+        "repo_plans": state.get("repo_plans", []),
     }
     (artifacts_dir / "run.json").write_text(json.dumps(run_payload, indent=2), encoding="utf-8")
+
+    # Write prompts directory if repo_plans exist
+    if "repo_plans" in state and state["repo_plans"]:
+        prompts_dir = artifacts_dir / "prompts"
+        prompts_dir.mkdir(exist_ok=True)
+
+        for i, plan in enumerate(state["repo_plans"]):
+            repo_name = Path(plan["repo_path"]).name or f"repo_{i}"
+            provider = plan["provider"]
+
+            # Look for prompt in raw data (stored during planning but not in RepoPlan)
+            # For now, we'll note that prompts would be saved by the agent
+            # In a real implementation, we'd pass raw data through RepoPlan
+            prompt_filename = f"{repo_name}_{provider}_prompt.txt"
+            prompt_path = prompts_dir / prompt_filename
+
+            # Write a placeholder noting the prompt would be here
+            prompt_content = f"""# {provider.upper()} Prompt for {plan["repo_path"]}
+
+Goal: {state["goal"]}
+Status: {plan["status"]}
+
+Summary: {plan["summary"]}
+
+Proposed Changes:
+"""
+            for change in plan["proposed_changes"]:
+                prompt_content += f"- {change}\n"
+
+            if plan["questions_for_hitl"]:
+                prompt_content += "\nQuestions for HITL:\n"
+                for question in plan["questions_for_hitl"]:
+                    prompt_content += f"- {question}\n"
+
+            prompt_path.write_text(prompt_content, encoding="utf-8")
+
     state["events"].append(_record_event("write_artifacts_node", "artifacts written"))
     return state
 
@@ -247,12 +397,14 @@ def build_coordinate_graph_conditional() -> Any:
     graph = StateGraph(OrchestrationState)
     graph.add_node("collect_constraints_node", collect_constraints_node)
     graph.add_node("propose_split_node", propose_split_node)
+    graph.add_node("agent_plan_node", agent_plan_node)
     graph.add_node("decide_node", decide_node)
     graph.add_node("write_artifacts_node", write_artifacts_node)
 
     graph.set_entry_point("collect_constraints_node")
     graph.add_edge("collect_constraints_node", "propose_split_node")
-    graph.add_edge("propose_split_node", "decide_node")
+    graph.add_edge("propose_split_node", "agent_plan_node")
+    graph.add_edge("agent_plan_node", "decide_node")
     graph.add_conditional_edges("decide_node", route_after_decide)
     graph.add_edge("write_artifacts_node", END)
     return graph.compile()
@@ -263,13 +415,15 @@ def build_coordinate_graph_interrupt() -> Any:
     graph = StateGraph(OrchestrationState)
     graph.add_node("collect_constraints_node", collect_constraints_node)
     graph.add_node("propose_split_node", propose_split_node)
+    graph.add_node("agent_plan_node", agent_plan_node)
     graph.add_node("decide_node", decide_node)
     graph.add_node("hitl_interrupt_node", hitl_interrupt_node)
     graph.add_node("write_artifacts_node", write_artifacts_node)
 
     graph.set_entry_point("collect_constraints_node")
     graph.add_edge("collect_constraints_node", "propose_split_node")
-    graph.add_edge("propose_split_node", "decide_node")
+    graph.add_edge("propose_split_node", "agent_plan_node")
+    graph.add_edge("agent_plan_node", "decide_node")
     graph.add_conditional_edges("decide_node", route_after_decide_interrupt)
     graph.add_edge("hitl_interrupt_node", "write_artifacts_node")
     graph.add_edge("write_artifacts_node", END)

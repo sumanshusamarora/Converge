@@ -19,6 +19,8 @@ class ConvergeConfig:
     model: str | None = None
     no_llm: bool = False
     hil_mode: Literal["conditional", "interrupt"] = "conditional"
+    agent_provider: str = "codex"
+    enable_codex_exec: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -33,4 +35,6 @@ class ConvergeConfig:
             raise ValueError("max_rounds must be at least 1")
         if self.hil_mode not in {"conditional", "interrupt"}:
             raise ValueError("hil_mode must be either 'conditional' or 'interrupt'")
+        if self.agent_provider.lower() not in {"codex", "copilot"}:
+            raise ValueError("agent_provider must be either 'codex' or 'copilot'")
         logger.info("Config initialized: goal=%s, repos=%s", self.goal, self.repos)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -24,6 +25,10 @@ class Coordinator:
     def __init__(self, config: ConvergeConfig) -> None:
         self.config = config
         self.run_dir = self._build_run_directory(config.output_dir)
+
+        # Set CONVERGE_CODEX_ENABLED if enable_codex_exec is True
+        if config.enable_codex_exec:
+            os.environ["CONVERGE_CODEX_ENABLED"] = "true"
 
     def coordinate(self) -> OrchestrationState:
         """Execute the coordination workflow."""
@@ -51,6 +56,8 @@ class Coordinator:
             "no_llm": self.config.no_llm,
             "human_decision": None,
             "hil_mode": self.config.hil_mode,
+            "repo_plans": [],
+            "agent_provider": self.config.agent_provider,
         }
         final_state = cast(OrchestrationState, app.invoke(initial_state))
         logger.info("Coordination complete with status: %s", final_state["status"])

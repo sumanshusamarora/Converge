@@ -61,7 +61,52 @@ cd Converge
 
 # Install in development mode
 pip install -e ".[dev]"
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env and add your API keys
 ```
+
+## Environment Variables
+
+Converge requires certain environment variables for operation:
+
+### Required
+- `OPENAI_API_KEY`: Your OpenAI API key (required for LLM-based proposals and Codex agent)
+
+### Optional (Observability)
+- `OPIK_API_KEY`: Your Opik API key for tracing
+- `OPIK_PROJECT_NAME`: Project name in Opik (default: "converge")
+- `OPIK_WORKSPACE`: Your Opik workspace
+- `OPIK_URL_OVERRIDE`: Opik API URL (default: "https://www.comet.com/opik/api")
+- `OPIK_TRACK_DISABLE`: Set to "true" to disable tracing (default: "false")
+
+### Agent Configuration
+- `CONVERGE_AGENT_PROVIDER`: Agent provider to use - "codex" or "copilot" (default: "codex")
+- `CONVERGE_CODEX_ENABLED`: Enable Codex CLI execution (default: "false")
+- `CONVERGE_OPENAI_MODEL`: Optional override for OpenAI model
+
+**Important:** Never commit `.env` to version control. The `.env.example` file shows the required structure.
+
+## Agents
+
+Converge uses a provider-agnostic agent interface to coordinate work across repositories. Two agent adapters are currently supported:
+
+### CodexAgent
+- **Provider:** OpenAI Codex
+- **Capabilities:** Planning and optional execution via Codex CLI (disabled by default)
+- **Authentication:** Requires `OPENAI_API_KEY`
+- **Execution:** Set `CONVERGE_CODEX_ENABLED=true` or use `--enable-codex-exec` flag to enable Codex CLI execution
+- **Use Case:** AI-powered planning with optional tool-based execution
+
+### GitHubCopilotAgent
+- **Provider:** GitHub Copilot
+- **Capabilities:** Prompt pack generation (planning-only)
+- **Authentication:** No API keys needed (generates prompts for manual use)
+- **Execution:** Not supported (planning-only adapter)
+- **Use Case:** Generate structured prompts for use with GitHub Copilot
+
+Both agents implement the same `CodingAgent` interface and produce `AgentResult` objects with status, summary, proposed changes, and questions requiring human judgment.
 
 ## Usage
 
@@ -80,8 +125,14 @@ converge coordinate \
 - `--goal`: The high-level goal to achieve (required)
 - `--repos`: Repository identifier (can be specified multiple times, at least one required)
 - `--max-rounds`: Maximum convergence rounds (default: 2)
-- `--output-dir`: Directory for artifacts (default: ./converge-output)
+- `--output-dir`: Directory for artifacts (default: .converge)
 - `--log-level`: Logging verbosity (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `--model`: Override OpenAI model for proposal generation
+- `--no-llm`: Force heuristic proposal generation (skip LLM)
+- `--no-tracing`: Disable Opik tracing for this run
+- `--hil-mode`: HITL strategy - "conditional" or "interrupt" (default: conditional)
+- `--agent-provider`: Agent provider - "codex" or "copilot" (default: from env or "codex")
+- `--enable-codex-exec`: Enable Codex CLI execution (requires OPENAI_API_KEY)
 
 ### Output Artifacts
 
