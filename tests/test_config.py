@@ -51,7 +51,7 @@ def test_converge_config_no_repos() -> None:
 
 def test_converge_config_invalid_hil_mode() -> None:
     with pytest.raises(ValueError, match="hil_mode must be either 'conditional' or 'interrupt'"):
-        ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")  # type: ignore[arg-type]
+        ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")
 
 
 def test_load_queue_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

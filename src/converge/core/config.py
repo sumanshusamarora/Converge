@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class ConvergeConfig:
+class ConvergeConfig(BaseModel):
     """Configuration for a Converge coordination session."""
 
     goal: str
@@ -24,10 +24,10 @@ class ConvergeConfig:
     hil_mode: Literal["conditional", "interrupt"] = "conditional"
     agent_provider: str = "codex"
     enable_codex_exec: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        """Validate configuration after initialization."""
+    def model_post_init(self, __context: Any) -> None:
+        """Validate configuration values after model initialization."""
         if not self.goal.strip():
             raise ValueError("Goal cannot be empty")
         if not self.repos:
@@ -43,12 +43,11 @@ class ConvergeConfig:
         logger.info("Config initialized: goal=%s, repos=%s", self.goal, self.repos)
 
 
-@dataclass(frozen=True)
-class QueueSettings:
+class QueueSettings(BaseModel):
     """Queue and worker settings loaded from environment variables."""
 
     backend: str
-    sqlalchemy_database_uri: str | None
+    sqlalchemy_database_uri: str | None = None
     worker_poll_interval_seconds: float
     worker_batch_size: int
     worker_max_attempts: int

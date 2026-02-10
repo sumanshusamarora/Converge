@@ -97,5 +97,5 @@ addopts = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["dotenv", "langgraph.*", "langchain", "langchain.*", "openai", "opik", "opik.*", "pydantic", "sqlalchemy", "sqlalchemy.*"]
+module = ["dotenv", "langgraph.*", "langchain", "langchain.*", "openai", "opik", "opik.*", "pydantic"]
 ignore_missing_imports = true

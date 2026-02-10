@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
+
+from pydantic import BaseModel, Field
 
 from converge.core.config import ConvergeConfig
 from converge.orchestration.coordinator import Coordinator
@@ -13,14 +14,13 @@ from converge.orchestration.coordinator import Coordinator
 RunStatus = Literal["CONVERGED", "HITL_REQUIRED", "FAILED"]
 
 
-@dataclass(frozen=True)
-class RunOutcome:
+class RunOutcome(BaseModel):
     """Final outcome for a single coordinate workflow invocation."""
 
     status: RunStatus
     summary: str
     artifacts_dir: str
-    hitl_questions: list[str] = field(default_factory=list)
+    hitl_questions: list[str] = Field(default_factory=list)
 
 
 def run_coordinate(
