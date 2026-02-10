@@ -10,7 +10,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from converge.agents.policy import ExecutionPolicy
 
 
 class AgentProvider(str, Enum):
@@ -46,12 +49,14 @@ class AgentTask:
         repo: Repository context with signals and metadata
         instructions: Project-specific rules or constraints from AGENTS.md
         max_steps: Maximum planning iterations (default: 5)
+        execution_policy: Policy controlling execution capabilities (optional)
     """
 
     goal: str
     repo: RepoContext
     instructions: str
     max_steps: int = 5
+    execution_policy: "ExecutionPolicy | None" = None
 
 
 @dataclass
@@ -113,3 +118,23 @@ class CodingAgent(ABC):
         Codex CLI-based agents may support execution via tool use.
         Prompt-pack generators (e.g., Copilot adapter) return False.
         """
+
+    def execute(self, task: AgentTask) -> AgentResult:
+        """Execute changes for the given task.
+
+        This method should only be called if supports_execution() returns True
+        and the task's execution_policy allows execution.
+
+        Default implementation raises NotImplementedError. Subclasses that
+        support execution must override this method.
+
+        Args:
+            task: The task to execute
+
+        Returns:
+            AgentResult with execution outcome
+
+        Raises:
+            NotImplementedError: If execution is not supported by this agent
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not implement execute()")

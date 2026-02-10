@@ -1,113 +1,117 @@
-# Copilot Instructions (Repository-wide)
+# Codex Agent Instructions
 
-You are an AI coding agent working on this repository. Follow these rules strictly.
+You are a Codex agent working on the Converge repository. These instructions govern safe execution, bounded loops, and collaboration.
 
-## Non-negotiables
-- Prefer correctness, security, scalability, and maintainability over cleverness.
-- Never assume; verify by reading existing code and running checks.
-- Keep changes minimal and well-scoped. Avoid broad refactors unless requested or required.
-- If requirements are ambiguous or risky, raise a Human-in-the-Loop (HITL) question with clear options and tradeoffs.
+## Core Principles
 
-## Before writing code
-1. Search the codebase for existing patterns, utilities, and conventions. Reuse them.
-2. Identify the correct module to extend (avoid new modules if an existing one fits).
-3. Confirm the expected behavior by locating:
+1. **Safety First**: Never execute commands that could:
+   - Leak secrets, tokens, or credentials
+   - Modify code outside the designated repository
+   - Bypass security controls or execute arbitrary code without validation
+   - Cause data loss or irreversible changes without explicit permission
+
+2. **Bounded Convergence**: 
+   - Default max rounds: 2
+   - Stop and raise HITL when:
+     - Requirements are ambiguous
+     - Risks involve security, breaking changes, or unclear ownership
+     - Unable to make progress after max attempts
+   - Use new information from each iteration to converge on a solution
+
+3. **Git Hygiene**:
+   - Always verify `.git` directory exists before operations
+   - Default behavior: create new branch with prefix `converge/`
+   - Alternative: require clean working directory (no uncommitted changes)
+   - Never force-push or rewrite history
+   - Always stage, commit, and push changes with descriptive messages
+
+## Execution Policy
+
+Codex execution is gated by **ALL** of the following:
+
+1. **Environment**: `CONVERGE_CODEX_ENABLED=true` must be set
+2. **Task flag**: Explicit `--allow-exec` or equivalent flag in task/CLI
+3. **Repository safety checks**:
+   - Repository exists and has `.git` directory
+   - If `require_git_clean=true`: working directory must be clean
+   - If `create_branch=true`: create and checkout new branch `converge/<timestamp>`
+
+## Command Allowlist
+
+Only the following command prefixes are allowed during execution:
+- `pytest` - Run tests
+- `ruff` - Linting and formatting
+- `black` - Code formatting  
+- `mypy` - Type checking
+- `npm`, `pnpm`, `yarn` - JavaScript package management and scripts
+- `python` - Run Python scripts/modules
+- `pip` - Python package installation
+- `git` - Git operations (with safety checks)
+- `cat`, `ls`, `find`, `grep` - Read-only file operations
+- `mkdir`, `touch` - Safe file creation
+
+Commands are matched by **prefix**. Any command not in the allowlist is rejected.
+
+## Before Writing Code
+
+1. Read existing code to understand patterns and conventions
+2. Identify the minimal set of files to modify
+3. Verify behavior by locating:
    - Existing tests
-   - Similar endpoints/components
-   - Existing schemas/contracts
-4. Write down a short plan (3–6 bullets) before making edits when work is non-trivial.
+   - Similar implementations
+   - API contracts/schemas
+4. Write a short plan (3-6 bullets) before making changes
 
-## Implementation guidelines
-- Prefer small, composable functions. Break complex methods into smaller helpers.
-- Keep functions/classes single-purpose.
-- Use clear names; avoid abbreviations unless already established in the repo.
-- Add docstrings for public functions/classes and any non-obvious logic.
-- Add type hints (Python) and strong typing (TS) wherever feasible.
-- Logging:
-  - Use lazy logging style (e.g., logger.info("x=%s", x)) to avoid eager formatting.
-  - Never log secrets, tokens, credentials, or sensitive customer data.
+## Implementation Guidelines
 
-## Tests are mandatory
-- Add or update tests for every behavior change (happy path + key edge cases).
-- If you fix a bug, add a regression test that fails before the fix.
-- Always run the relevant test suite(s) locally before concluding.
-- If tests are slow, run the smallest targeted subset first, then the full suite when practical.
+- **Minimal changes**: Change as few lines as possible
+- **Type safety**: Add type hints to all new functions
+- **Testing**: Add or update tests for all behavior changes
+- **Logging**: Use lazy logging style: `logger.info("x=%s", x)`
+- **No secrets**: Never log or commit secrets, tokens, or credentials
+- **Documentation**: Update docs only if interfaces change
 
-## Quality gates (Python)
-- Format with **black**.
-- Lint with **ruff** (including unused imports, import order, and common correctness checks).
-- Ensure there are **no unused imports** and imports are correctly ordered.
-- Prefer ruff fixes when safe; do not hide real issues with ignores.
-- Keep cyclomatic complexity reasonable; refactor large functions.
+## Quality Gates
 
-## Quality gates (TypeScript/Frontend)
-- Run typecheck and lint before finalizing changes.
-- Avoid `any` unless unavoidable; prefer strict types and discriminated unions where helpful.
-- Keep UI changes accessible (keyboard nav, aria labels where needed).
-- Prefer existing components, styling patterns, and state management conventions.
+Before finalizing changes, run:
+```bash
+ruff check .
+ruff format .
+mypy src/
+pytest
+```
 
-## API contracts & cross-module boundaries
-- Treat the API contract as a first-class artifact:
-  - Keep request/response shapes consistent and version-safe.
-  - Prefer backwards-compatible changes (additive fields, optional properties).
-- Validate contract changes with:
-  - Backend schema validation / OpenAPI updates (if present)
-  - Frontend client generation or type validation (if present)
-- Clearly document any breaking changes and provide migration notes.
-- Decide “where logic lives” by:
-  - Backend owns validation, authorization, persistence, and business rules.
-  - Frontend owns presentation, UX state, and client-side input constraints (not security).
-  - Avoid duplicating business logic across layers.
+All checks must pass. If mypy has `ignore_errors` for orchestration modules, fix those type issues.
 
-## Security & safety
-- Never introduce insecure defaults:
-  - Validate inputs
-  - Use safe parameterized queries
-  - Apply authz checks server-side
-  - Avoid SSRF/command injection patterns
-- Do not add dependencies without strong justification. Prefer standard library / existing deps.
-- If your change touches auth, payments, PII, encryption, or infra, escalate to HITL.
+## Security & Secrets
 
-## Performance & scalability
-- Avoid N+1 patterns (DB and network).
-- Batch where appropriate; paginate large collections.
-- Prefer async/background processing for long-running tasks where the repo already supports it.
-- Add basic instrumentation/logs for new critical paths (but keep logs non-sensitive).
+- **Never** hardcode or print secrets
+- `.env` is local-only; `.env.example` contains placeholders only
+- Validate all inputs before execution
+- Use parameterized queries, never string concatenation
+- Apply authorization checks server-side
+- If change touches auth, encryption, or PII: STOP and raise HITL
 
-## Documentation & developer experience
-- Update README / docs when behavior or setup changes.
-- Add comments only where needed to explain “why”, not “what”.
-- Keep config consistent with the repo conventions.
+## Collaboration with Copilot
 
-## Always run these before finishing (adapt to repo)
-- Python:
-  - `ruff check .`
-  - `black .`
-  - `pytest` (or repo test runner)
-- Frontend:
-  - `npm/yarn/pnpm lint`
-  - `npm/yarn/pnpm typecheck`
-  - `npm/yarn/pnpm test` (or repo test runner)
-If you cannot run a command, explain why and propose the next best verification.
+- Copilot is **planning-only** and never executes code
+- Codex may execute when conditions are met (see Execution Policy)
+- Both agents coordinate through Converge's orchestration layer
+- Respect ownership boundaries between repositories
 
-## Output expectations
-- Provide a short summary of changes.
-- Provide evidence: commands run + results, and what tests were added/updated.
-- If tradeoffs exist, list them and recommend one option.
-- If blocked or risky, raise HITL with a concise question and 2–3 options.
+## When to Stop and Raise HITL
 
-## Project Context: Converge
+Stop immediately and request human judgment when:
+- Requirements are unclear or conflicting
+- Multiple valid approaches exist with different tradeoffs
+- Change involves security, breaking API changes, or architectural decisions
+- Unable to make progress after max attempts
+- Repository structure is unclear or signals are missing
+- Tests fail and root cause is unclear
 
-- This project coordinates multiple repositories that own different
-  responsibilities of a single system.
-- Repositories are peers, not mirrors.
-- The goal is early convergence, not exhaustive debate.
-- Agents must:
-  - identify ownership boundaries
-  - surface constraints and risks
-  - propose where work should happen
-  - stop after bounded rounds (default: 2)
-- If tradeoffs involve security, architecture, breaking changes,
-  or unclear ownership, escalate to HITL immediately.
-- Prefer plans, summaries, and artifacts over direct code changes
-  in early iterations.
+## Error Handling
+
+- Treat all external operations as fallible
+- Log errors with context but without sensitive data
+- Fail fast and clearly communicate what went wrong
+- Provide actionable next steps or questions for HITL

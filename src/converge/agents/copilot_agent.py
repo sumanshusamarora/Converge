@@ -3,6 +3,8 @@
 This adapter generates structured prompt packs for GitHub Copilot.
 It does not integrate with any Copilot API (no stable API exists).
 Instead, it produces human-readable prompts and proposals.
+
+Copilot is planning-only and never executes code.
 """
 
 import logging
@@ -29,6 +31,27 @@ class GitHubCopilotAgent(CodingAgent):
     def supports_execution(self) -> bool:
         """Return False (Copilot adapter is planning-only for now)."""
         return False
+
+    def execute(self, task: AgentTask) -> AgentResult:  # noqa: ARG002
+        """Copilot never executes code.
+
+        Args:
+            task: The task (unused)
+
+        Returns:
+            AgentResult with HITL_REQUIRED status
+        """
+        return AgentResult(
+            provider=self.provider,
+            status="HITL_REQUIRED",
+            summary="Copilot is plan-only and cannot execute code",
+            proposed_changes=[],
+            questions_for_hitl=[
+                "Copilot adapter is configured for planning only",
+                "To execute changes, use Codex agent with execution enabled",
+            ],
+            raw={"execution_attempted": False, "reason": "copilot_plan_only"},
+        )
 
     def plan(self, task: AgentTask) -> AgentResult:
         """Generate a Copilot prompt pack and planning proposal.
