@@ -154,6 +154,7 @@ def agent_plan_node(state: OrchestrationState) -> OrchestrationState:
             "summary": result.summary,
             "proposed_changes": result.proposed_changes,
             "questions_for_hitl": result.questions_for_hitl,
+            "raw": result.raw,
         }
 
         repo_plans.append(plan)
@@ -357,7 +358,7 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
     }
     (artifacts_dir / "run.json").write_text(json.dumps(run_payload, indent=2), encoding="utf-8")
 
-    # Write prompts directory if repo_plans exist
+    # Write prompts directory if repo_plans exist (deprecated structure, kept for compatibility)
     if "repo_plans" in state and state["repo_plans"]:
         prompts_dir = artifacts_dir / "prompts"
         prompts_dir.mkdir(exist_ok=True)
@@ -366,13 +367,10 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
             repo_name = Path(plan["repo_path"]).name or f"repo_{i}"
             provider = plan["provider"]
 
-            # Look for prompt in raw data (stored during planning but not in RepoPlan)
-            # For now, we'll note that prompts would be saved by the agent
-            # In a real implementation, we'd pass raw data through RepoPlan
+            # Write basic prompt for backward compatibility
             prompt_filename = f"{repo_name}_{provider}_prompt.txt"
             prompt_path = prompts_dir / prompt_filename
 
-            # Write a placeholder noting the prompt would be here
             prompt_content = f"""# {provider.upper()} Prompt for {plan["repo_path"]}
 
 Goal: {state["goal"]}
@@ -391,6 +389,105 @@ Proposed Changes:
                     prompt_content += f"- {question}\n"
 
             prompt_path.write_text(prompt_content, encoding="utf-8")
+
+    # Write structured repo-plans directory (NEW: Handoff Pack)
+    if "repo_plans" in state and state["repo_plans"]:
+        repo_plans_dir = artifacts_dir / "repo-plans"
+        repo_plans_dir.mkdir(exist_ok=True)
+
+        for i, plan in enumerate(state["repo_plans"]):
+            repo_name = Path(plan["repo_path"]).name or f"repo_{i}"
+            repo_plan_dir = repo_plans_dir / repo_name
+            repo_plan_dir.mkdir(exist_ok=True)
+
+            # 1. Write plan.md - human-readable plan summary
+            plan_md_lines = [
+                f"# Plan: {plan['repo_path']}",
+                "",
+                f"**Goal:** {state['goal']}",
+                f"**Provider:** {plan['provider']}",
+                f"**Status:** {plan['status']}",
+                "",
+                "## Summary",
+                "",
+                plan["summary"],
+                "",
+                "## Proposed Changes",
+                "",
+            ]
+            for change in plan["proposed_changes"]:
+                plan_md_lines.append(f"- {change}")
+
+            if plan["questions_for_hitl"]:
+                plan_md_lines.extend(["", "## Questions for HITL", ""])
+                for question in plan["questions_for_hitl"]:
+                    plan_md_lines.append(f"- {question}")
+
+            (repo_plan_dir / "plan.md").write_text("\n".join(plan_md_lines), encoding="utf-8")
+
+            # 2. Write copilot-prompt.txt - VS Code ready prompt
+            copilot_prompt = plan["raw"].get("copilot_prompt", "")
+            if copilot_prompt:
+                (repo_plan_dir / "copilot-prompt.txt").write_text(
+                    str(copilot_prompt), encoding="utf-8"
+                )
+            else:
+                # Generate a basic prompt if not available
+                basic_prompt = f"""# Task for {plan['repo_path']}
+
+Goal: {state['goal']}
+
+{plan['summary']}
+
+Proposed Changes:
+"""
+                for change in plan["proposed_changes"]:
+                    basic_prompt += f"- {change}\n"
+                (repo_plan_dir / "copilot-prompt.txt").write_text(basic_prompt, encoding="utf-8")
+
+            # 3. Write commands.sh - execution hints (if available)
+            commands = []
+            if "pyproject.toml" in plan["raw"].get("signals", []):
+                commands.extend(
+                    [
+                        "# Python project detected",
+                        "# Install dependencies:",
+                        "# pip install -e .[dev]",
+                        "",
+                        "# Run tests:",
+                        "# pytest",
+                        "",
+                        "# Type check:",
+                        "# mypy src/",
+                        "",
+                        "# Format and lint:",
+                        "# ruff format .",
+                        "# ruff check .",
+                    ]
+                )
+            elif "package.json" in plan["raw"].get("signals", []):
+                commands.extend(
+                    [
+                        "# Node project detected",
+                        "# Install dependencies:",
+                        "# npm install",
+                        "",
+                        "# Run tests:",
+                        "# npm test",
+                        "",
+                        "# Type check:",
+                        "# npm run typecheck",
+                        "",
+                        "# Lint:",
+                        "# npm run lint",
+                    ]
+                )
+            else:
+                commands.append("# No specific commands detected for this repository type")
+
+            if commands:
+                commands_content = "#!/bin/bash\n" + "\n".join(commands) + "\n"
+                (repo_plan_dir / "commands.sh").write_text(commands_content, encoding="utf-8")
 
     state["events"].append(_record_event("write_artifacts_node", "artifacts written"))
     return state
