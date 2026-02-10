@@ -4,9 +4,18 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TypedDict
 
 logger = logging.getLogger(__name__)
+
+
+class EventRecord(TypedDict):
+    """Machine-readable event produced during a coordination run."""
+
+    timestamp: str
+    action: str
+    repo: str | None
+    details: dict[str, Any]
 
 
 class CoordinationStatus(str, Enum):
@@ -67,6 +76,7 @@ class CoordinationState:
         escalation_reason: Reason for escalation (if status is ESCALATED)
         created_at: Session creation timestamp
         updated_at: Last update timestamp
+        events: Run-scoped machine-readable event log
     """
 
     goal: str
@@ -80,6 +90,7 @@ class CoordinationState:
     escalation_reason: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
+    events: list[EventRecord] = field(default_factory=list)
 
     def update_status(self, new_status: CoordinationStatus) -> None:
         """Update the coordination status.

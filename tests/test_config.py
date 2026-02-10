@@ -14,7 +14,7 @@ def test_converge_config_valid() -> None:
     assert config.goal == "Add discount code support"
     assert config.repos == ["api", "web"]
     assert config.max_rounds == 2
-    assert config.output_dir == "./converge-output"
+    assert config.output_dir == ".converge"
     assert config.log_level == "INFO"
 
 
