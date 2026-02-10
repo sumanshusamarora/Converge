@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,7 @@ def run_coordinate(
     max_rounds: int,
     agent_provider: str | None,
     base_output_dir: Path | None,
+    hitl_resolution: dict[str, Any] | None = None,
 ) -> RunOutcome:
     """Execute the coordinate workflow and return a normalized outcome."""
     final_agent_provider = agent_provider or os.getenv("CONVERGE_AGENT_PROVIDER", "codex")
@@ -52,7 +53,7 @@ def run_coordinate(
         enable_codex_exec=enable_codex_exec,
     )
 
-    coordinator = Coordinator(config)
+    coordinator = Coordinator(config, hitl_resolution=hitl_resolution)
     final_state = coordinator.coordinate()
 
     hitl_questions: list[str] = []

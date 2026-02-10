@@ -344,6 +344,7 @@ Identify any risks or questions requiring human judgment.
             "prompt_metadata": prompt_metadata,
             "execution_mode": "heuristic",
             "codex_enabled": self._codex_enabled,
+            "signals": task.repo.signals,
         }
 
         return AgentResult(

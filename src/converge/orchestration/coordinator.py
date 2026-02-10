@@ -22,9 +22,12 @@ logger = logging.getLogger(__name__)
 class Coordinator:
     """Orchestrates multi-repository coordination using LangGraph."""
 
-    def __init__(self, config: ConvergeConfig) -> None:
+    def __init__(
+        self, config: ConvergeConfig, hitl_resolution: dict[str, Any] | None = None
+    ) -> None:
         self.config = config
         self.run_dir = self._build_run_directory(config.output_dir)
+        self.hitl_resolution = hitl_resolution
 
         # Set CONVERGE_CODEX_ENABLED if enable_codex_exec is True
         if config.enable_codex_exec:
@@ -58,6 +61,7 @@ class Coordinator:
             "hil_mode": self.config.hil_mode,
             "repo_plans": [],
             "agent_provider": self.config.agent_provider,
+            "hitl_resolution": self.hitl_resolution,
         }
         final_state = cast(OrchestrationState, app.invoke(initial_state))
         logger.info("Coordination complete with status: %s", final_state["status"])

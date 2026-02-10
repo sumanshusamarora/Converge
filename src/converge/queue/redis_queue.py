@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from converge.queue.base import TaskQueue
 from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult
 
@@ -44,3 +46,15 @@ class RedisTaskQueue(TaskQueue):
     def get(self, task_id: str) -> TaskRecord:
         """Get a task from Redis."""
         raise NotImplementedError("TODO: implement Redis get")
+
+    def get_hitl_questions(self, task_id: str) -> list[str]:
+        """Get HITL questions from Redis."""
+        raise NotImplementedError("TODO: implement Redis get_hitl_questions")
+
+    def get_hitl_resolution(self, task_id: str) -> dict[str, Any] | None:
+        """Get HITL resolution from Redis."""
+        raise NotImplementedError("TODO: implement Redis get_hitl_resolution")
+
+    def resolve_hitl(self, task_id: str, resolution: dict[str, Any]) -> None:
+        """Resolve HITL in Redis."""
+        raise NotImplementedError("TODO: implement Redis resolve_hitl")

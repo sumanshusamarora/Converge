@@ -30,6 +30,7 @@ class RepoPlan(TypedDict):
     summary: str
     proposed_changes: list[str]
     questions_for_hitl: list[str]
+    raw: dict[str, Any]
 
 
 Status = Literal["CONVERGED", "HITL_REQUIRED", "FAILED"]
@@ -54,3 +55,4 @@ class OrchestrationState(TypedDict, total=False):
     hil_mode: HILMode
     repo_plans: list[RepoPlan]
     agent_provider: str
+    hitl_resolution: dict[str, Any] | None
