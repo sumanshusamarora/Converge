@@ -1,0 +1,9 @@
+click>=8.1.0
+python-dotenv
+sqlalchemy
+pydantic
+fastapi
+uvicorn
+opik
+langgraph
+langchain[openai]
