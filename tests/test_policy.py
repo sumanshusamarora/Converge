@@ -1,7 +1,5 @@
 """Tests for agent execution policy."""
 
-import os
-
 import pytest
 
 from converge.agents.policy import (
@@ -177,9 +175,7 @@ def test_policy_from_env_custom_allowlist() -> None:
     """Test that custom allowlist is passed through to policy."""
     custom_allowlist = ["pytest", "custom-command"]
 
-    policy = policy_from_env_and_request(
-        cli_flags={"allowlisted_commands": custom_allowlist}
-    )
+    policy = policy_from_env_and_request(cli_flags={"allowlisted_commands": custom_allowlist})
 
     assert policy.allowlisted_commands == custom_allowlist
 

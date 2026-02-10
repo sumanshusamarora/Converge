@@ -107,8 +107,3 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "converge.server.app"
 disallow_untyped_decorators = false
-
-
-[[tool.mypy.overrides]]
-module = "converge.orchestration.graph"
-ignore_errors = true
