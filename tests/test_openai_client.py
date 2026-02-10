@@ -2,12 +2,17 @@
 
 import pytest
 
-from converge.llm.openai_client import OpenAIClient
+from converge.llm.openai_client import DEFAULT_MODEL, OpenAIClient
+
+
+def test_openai_client_defaults_to_gpt5_family_model() -> None:
+    assert DEFAULT_MODEL.startswith("gpt-5")
+    assert OpenAIClient().model.startswith("gpt-5")
 
 
 def test_openai_client_fallback_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    client = OpenAIClient(model="gpt-4o-mini")
+    client = OpenAIClient(model="gpt-5-mini")
 
     result = client.propose_responsibility_split(
         goal="Add discount support",

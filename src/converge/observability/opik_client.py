@@ -16,7 +16,6 @@ F = TypeVar("F", bound=Callable[..., Any])
 _CONFIGURED = False
 _OPIK_ENABLED = False
 
-
 TRUE_LIKE = {"1", "true", "yes", "on"}
 
 
@@ -52,6 +51,20 @@ def configure_opik() -> None:
         _OPIK_ENABLED = True
     except Exception:
         logger.warning("Opik initialization failed; continuing without tracing")
+
+
+def track_langgraph_app(app: Any) -> Any:
+    """Track a compiled LangGraph app with Opik when tracing is enabled."""
+    if not _OPIK_ENABLED:
+        return app
+
+    try:
+        langchain_integration = importlib.import_module("opik.integrations.langchain")
+        opik_tracer = langchain_integration.OpikTracer(tags=["converge"], metadata={"app": "cli"})
+        return langchain_integration.track_langgraph(app, opik_tracer)
+    except Exception:
+        logger.warning("Opik LangGraph integration unavailable; continuing without graph tracing")
+        return app
 
 
 def opik_track(name: str | None = None) -> Callable[[F], F]:

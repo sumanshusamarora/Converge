@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from converge.core.config import ConvergeConfig
+from converge.observability.opik_client import track_langgraph_app
 from converge.orchestration.graph import (
     build_coordinate_graph_conditional,
     build_coordinate_graph_interrupt,
@@ -57,8 +58,8 @@ class Coordinator:
 
     def _build_graph_app(self) -> Any:
         if self.config.hil_mode == "interrupt":
-            return build_coordinate_graph_interrupt()
-        return build_coordinate_graph_conditional()
+            return track_langgraph_app(build_coordinate_graph_interrupt())
+        return track_langgraph_app(build_coordinate_graph_conditional())
 
     def _build_run_directory(self, base_output_dir: str) -> Path:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")

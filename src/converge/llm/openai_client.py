@@ -7,11 +7,9 @@ import logging
 import os
 from typing import Any
 
-from converge.observability.opik_client import is_tracing_enabled
-
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-5-mini"
 
 
 class OpenAIClient:
@@ -23,7 +21,7 @@ class OpenAIClient:
     def propose_responsibility_split(
         self, goal: str, repo_summaries: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """Generate a structured split proposal using OpenAI or a local heuristic fallback."""
+        """Generate a structured split proposal using LangChain OpenAI or a local fallback."""
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             logger.info("OPENAI_API_KEY not configured; using heuristic proposal")
@@ -32,36 +30,15 @@ class OpenAIClient:
             return fallback
 
         try:
-            from openai import OpenAI
+            from langchain.chat_models import init_chat_model
 
-            client: Any = OpenAI(api_key=api_key)
-            if is_tracing_enabled():
-                try:
-                    from opik.integrations.openai import track_openai
-
-                    client = track_openai(client)
-                except Exception:
-                    logger.debug("Opik OpenAI integration unavailable", exc_info=True)
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        "Return JSON only with keys: proposal, rationale, risks, "
-                        "questions_for_hitl."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps({"goal": goal, "repo_summaries": repo_summaries}),
-                },
-            ]
-            completion = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                response_format={"type": "json_object"},
+            model = init_chat_model(self.model, model_provider="openai")
+            prompt = (
+                "Return JSON only with keys: proposal, rationale, risks, questions_for_hitl."
+                f"\nInput: {json.dumps({'goal': goal, 'repo_summaries': repo_summaries})}"
             )
-            content = completion.choices[0].message.content or "{}"
+            response = model.invoke(prompt)
+            content = _extract_content(response)
             parsed = json.loads(content)
             return {
                 "proposal": parsed.get("proposal", {}),
@@ -76,7 +53,24 @@ class OpenAIClient:
             return heuristic_proposal(goal, repo_summaries)
 
 
+def _extract_content(response: Any) -> str:
+    """Extract textual content from a LangChain chat response."""
+    content = getattr(response, "content", "{}")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and "text" in item:
+                parts.append(str(item["text"]))
+        return "".join(parts) or "{}"
+    return str(content)
+
+
 def heuristic_proposal(goal: str, repo_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Generate a deterministic split proposal without external network calls."""
     assignments: dict[str, list[str]] = {}
     for repo_summary in repo_summaries:
         repo_path = str(repo_summary.get("path", "unknown"))
