@@ -4,6 +4,50 @@
 
 Modern software systems are often built across multiple repositories—each owning different responsibilities like backend, frontend, infrastructure, mobile apps, or data pipelines. Converge is a coordination and governance tool that helps these repositories work together effectively without becoming a code synchronizer or autonomous refactoring engine.
 
+## Features
+
+- ✅ **Web UI**: Manage tasks, view execution status, and resolve HITL questions
+- ✅ **REST API**: Programmatic access to task queue and artifacts
+- ✅ **Database-backed Queue**: Persistent task queue with PostgreSQL/SQLite support
+- ✅ **Background Worker**: Automated task execution with retry logic
+- ✅ **Docker Compose**: Production-ready containerized deployment
+- ✅ **HITL Support**: Human-in-the-loop resolution for critical decisions
+
+## Quick Start
+
+### Option 1: Docker Compose (Recommended)
+
+```bash
+# Set your OpenAI API key (optional)
+export OPENAI_API_KEY="your-key-here"
+
+# Start all services
+docker-compose up -d
+
+# Access the UI
+open http://localhost:3000
+```
+
+### Option 2: Local Development
+
+```bash
+# Install dependencies
+pip install -e ".[dev]"
+
+# Start API server
+converge server --port 8080
+
+# Start worker (in another terminal)
+converge worker
+
+# Start frontend (in another terminal)
+cd src/frontend
+npm install
+npm run dev
+```
+
+Access the UI at http://localhost:3000
+
 ## What Converge Is
 
 Converge is a **multi-repository coordination tool** that:
@@ -86,7 +130,41 @@ Converge requires certain environment variables for operation:
 - `CONVERGE_CODEX_ENABLED`: Enable Codex CLI execution (default: "false")
 - `CONVERGE_OPENAI_MODEL`: Optional override for OpenAI model
 
+### Queue and Database
+- `SQLALCHEMY_DATABASE_URI`: Database connection string (default: "sqlite:///./converge.db")
+- `CONVERGE_QUEUE_BACKEND`: Queue backend - "db" (default: "db")
+- `CONVERGE_OUTPUT_DIR`: Directory for artifacts (default: ".converge")
+
+### Server
+- `CONVERGE_SERVER_HOST`: API server host (default: "0.0.0.0")
+- `CONVERGE_SERVER_PORT`: API server port (default: "8080")
+- `NEXT_PUBLIC_API_BASE_URL`: Frontend API endpoint (default: "http://localhost:8080")
+
 **Important:** Never commit `.env` to version control. The `.env.example` file shows the required structure.
+
+## Web UI
+
+The Converge web UI provides a visual interface for managing tasks:
+
+- **Tasks List**: Browse all tasks with status filtering
+- **Task Details**: View execution details, request parameters, and artifacts
+- **Create Task**: Submit new coordination tasks
+- **HITL Resolution**: Resolve tasks requiring human decisions
+- **Artifact Viewer**: View summaries and download handoff pack files
+
+## REST API
+
+Converge exposes a REST API for programmatic access:
+
+- `GET /api/tasks` - List tasks with optional status filter
+- `GET /api/tasks/{id}` - Get task details
+- `POST /api/tasks` - Create a new task
+- `POST /api/tasks/{id}/resolve` - Resolve HITL task
+- `POST /api/tasks/{id}/cancel` - Cancel task
+- `GET /api/runs/{run_id}/files` - List artifacts
+- `GET /api/runs/{run_id}/files/{path}` - Download artifact file
+
+See [DOCKER.md](DOCKER.md) for detailed API documentation.
 
 ## Agents
 

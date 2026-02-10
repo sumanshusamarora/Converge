@@ -1,12 +1,9 @@
 """SQLAlchemy-backed task queue implementation."""
-
 from __future__ import annotations
-
 import json
 from datetime import datetime, timezone
 from typing import cast
 from uuid import uuid4
-
 from sqlalchemy import (
     DateTime,
     Integer,
@@ -19,21 +16,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
-
 from converge.core.config import load_queue_settings
 from converge.queue.base import TaskQueue
 from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult, TaskStatus
-
-
 class Base(DeclarativeBase):
     """Declarative SQLAlchemy base for queue tables."""
-
-
 class TaskRow(Base):
     """Persistent task row for database queue backends."""
-
     __tablename__ = "tasks"
-
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -54,11 +44,10 @@ class TaskRow(Base):
     )
     hitl_questions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     hitl_resolution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 class DatabaseTaskQueue(TaskQueue):
     """Database queue implementation for SQLite and PostgreSQL."""
-
     def __init__(self, database_uri: str) -> None:
         self._engine = create_engine(database_uri, future=True, pool_pre_ping=True)
         self._session_factory = sessionmaker(bind=self._engine, expire_on_commit=False)
@@ -66,11 +55,9 @@ class DatabaseTaskQueue(TaskQueue):
         self._max_attempts = load_queue_settings().worker_max_attempts
         Base.metadata.create_all(self._engine)
         self._ensure_schema_extensions()
-
     def enqueue(self, request: TaskRequest) -> TaskRecord:
         """Enqueue a new pending task."""
         return self.enqueue_with_dedupe(request, source=None, idempotency_key=None)
-
     def enqueue_with_dedupe(
         self, request: TaskRequest, source: str | None, idempotency_key: str | None
     ) -> TaskRecord:
@@ -93,7 +80,6 @@ class DatabaseTaskQueue(TaskQueue):
             idempotency_key=idempotency_key,
             dedupe_key=dedupe_key,
         )
-
         with self._session_factory() as session:
             try:
                 session.add(task_row)
@@ -105,7 +91,6 @@ class DatabaseTaskQueue(TaskQueue):
                 if existing is None:
                     raise
                 return existing
-
     def find_by_source_idempotency(
         self, source: str | None, idempotency_key: str | None
     ) -> TaskRecord | None:
@@ -118,10 +103,8 @@ class DatabaseTaskQueue(TaskQueue):
             if row is None:
                 return None
             return self._to_record(row)
-
     def poll_and_claim(self, limit: int) -> list[TaskRecord]:
         """Poll pending tasks and claim up to ``limit`` tasks atomically.
-
         PostgreSQL uses row-level locks with ``SKIP LOCKED`` to allow concurrent
         workers without duplicate claims. SQLite falls back to a single
         transaction with immediate updates.
@@ -143,7 +126,6 @@ class DatabaseTaskQueue(TaskQueue):
                     .order_by(TaskRow.created_at.asc())
                     .limit(limit)
                 )
-
             rows = session.scalars(query).all()
             for row in rows:
                 row.status = TaskStatus.CLAIMED.value
@@ -151,7 +133,6 @@ class DatabaseTaskQueue(TaskQueue):
                 row.updated_at = now
             session.commit()
             return [self._to_record(row) for row in rows]
-
     def mark_running(self, task_id: str) -> None:
         """Mark a claimed task as running."""
         with self._session_factory() as session:
@@ -159,7 +140,6 @@ class DatabaseTaskQueue(TaskQueue):
             row.status = TaskStatus.RUNNING.value
             row.updated_at = self._now()
             session.commit()
-
     def complete(self, task_id: str, result: TaskResult) -> None:
         """Mark task completion with final status and artifacts location."""
         with self._session_factory() as session:
@@ -170,9 +150,9 @@ class DatabaseTaskQueue(TaskQueue):
             # Persist HITL questions when status is HITL_REQUIRED
             if result.status == TaskStatus.HITL_REQUIRED and result.hitl_questions:
                 row.hitl_questions_json = json.dumps(result.hitl_questions)
+            row.status_reason = result.status_reason
             row.updated_at = self._now()
             session.commit()
-
     def fail(self, task_id: str, error: str, retryable: bool) -> None:
         """Mark task failure and requeue while attempts remain."""
         with self._session_factory() as session:
@@ -187,13 +167,11 @@ class DatabaseTaskQueue(TaskQueue):
             else:
                 row.status = TaskStatus.FAILED.value
             session.commit()
-
     def get(self, task_id: str) -> TaskRecord:
         """Get a task by id."""
         with self._session_factory() as session:
             row = self._get_row(session, task_id)
             return self._to_record(row)
-
     def get_hitl_questions(self, task_id: str) -> list[str]:
         """Get HITL questions for a task in HITL_REQUIRED status."""
         with self._session_factory() as session:
@@ -201,7 +179,6 @@ class DatabaseTaskQueue(TaskQueue):
             if row.hitl_questions_json:
                 return cast(list[str], json.loads(row.hitl_questions_json))
             return []
-
     def get_hitl_resolution(self, task_id: str) -> dict[str, object] | None:
         """Get HITL resolution if it exists."""
         with self._session_factory() as session:
@@ -209,7 +186,6 @@ class DatabaseTaskQueue(TaskQueue):
             if row.hitl_resolution_json:
                 return cast(dict[str, object], json.loads(row.hitl_resolution_json))
             return None
-
     def resolve_hitl(self, task_id: str, resolution: dict[str, object]) -> None:
         """Resolve HITL questions and transition task back to PENDING."""
         with self._session_factory() as session:
@@ -221,13 +197,31 @@ class DatabaseTaskQueue(TaskQueue):
             row.claimed_at = None
             row.updated_at = self._now()
             session.commit()
-
+    def list_tasks(
+        self, status_filter: TaskStatus | None = None, limit: int = 100, offset: int = 0
+    ) -> list[TaskRecord]:
+        """List tasks with optional status filter and pagination."""
+        with self._session_factory() as session:
+            query = select(TaskRow).order_by(TaskRow.created_at.desc())
+            if status_filter is not None:
+                query = query.where(TaskRow.status == status_filter.value)
+            query = query.limit(limit).offset(offset)
+            rows = session.scalars(query).all()
+            return [self._to_record(row) for row in rows]
+    def cancel(self, task_id: str) -> None:
+        """Cancel a task."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            if row.status in {TaskStatus.SUCCEEDED.value, TaskStatus.FAILED.value}:
+                raise ValueError(f"Cannot cancel task {task_id} with status {row.status}")
+            row.status = TaskStatus.CANCELLED.value
+            row.updated_at = self._now()
+            session.commit()
     def _get_row(self, session: Session, task_id: str) -> TaskRow:
         row = cast(TaskRow | None, session.get(TaskRow, task_id))
         if row is None:
             raise ValueError(f"Task not found: {task_id}")
         return row
-
     def _to_record(self, row: TaskRow) -> TaskRecord:
         return TaskRecord(
             id=row.id,
@@ -240,16 +234,15 @@ class DatabaseTaskQueue(TaskQueue):
             artifacts_dir=row.artifacts_dir,
             source=row.source,
             idempotency_key=row.idempotency_key,
+            status_reason=row.status_reason,
+            resolution_json=row.resolution_json,
         )
-
     def _build_dedupe_key(self, source: str | None, idempotency_key: str | None) -> str | None:
         if not source or not idempotency_key:
             return None
         return f"{source}:{idempotency_key}"
-
     def _ensure_schema_extensions(self) -> None:
         """Ensure idempotency/source columns and unique index exist.
-
         No Alembic in this iteration, so this method performs idempotent schema
         extension checks for existing deployments.
         """
@@ -262,6 +255,8 @@ class DatabaseTaskQueue(TaskQueue):
             "dedupe_key": "TEXT",
             "hitl_questions_json": "TEXT",
             "hitl_resolution_json": "TEXT",
+            "status_reason": "TEXT",
+            "resolution_json": "TEXT",
         }
         with self._engine.begin() as conn:
             for column_name, column_sql_type in add_specs.items():
@@ -275,6 +270,5 @@ class DatabaseTaskQueue(TaskQueue):
                     "idx_tasks_source_dedupe_key_unique ON tasks(dedupe_key)"
                 )
             )
-
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: converge
+      POSTGRES_PASSWORD: converge
+      POSTGRES_DB: converge
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-EXEC", "pg_isready -U converge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  converge-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      SQLALCHEMY_DATABASE_URI: "postgresql://converge:converge@postgres:5432/converge"
+      CONVERGE_QUEUE_BACKEND: "db"
+      CONVERGE_OUTPUT_DIR: "/artifacts"
+      CONVERGE_SERVER_HOST: "0.0.0.0"
+      CONVERGE_SERVER_PORT: "8080"
+      OPIK_TRACK_DISABLE: "true"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+    volumes:
+      - converge-artifacts:/artifacts
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["converge", "server", "--host", "0.0.0.0", "--port", "8080"]
+
+  converge-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      SQLALCHEMY_DATABASE_URI: "postgresql://converge:converge@postgres:5432/converge"
+      CONVERGE_QUEUE_BACKEND: "db"
+      CONVERGE_OUTPUT_DIR: "/artifacts"
+      CONVERGE_WORKER_POLL_INTERVAL_SECONDS: "2"
+      CONVERGE_WORKER_BATCH_SIZE: "1"
+      CONVERGE_WORKER_MAX_ATTEMPTS: "3"
+      OPIK_TRACK_DISABLE: "true"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+    volumes:
+      - converge-artifacts:/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["converge", "worker"]
+
+  converge-frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8080"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - converge-api
+
+volumes:
+  postgres-data:
+  converge-artifacts:

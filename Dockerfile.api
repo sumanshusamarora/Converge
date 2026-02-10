@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY src/ ./src/
+COPY pyproject.toml ./
+
+# Install the package
+RUN pip install -e .
+
+# Create artifacts directory
+RUN mkdir -p /artifacts
+
+EXPOSE 8080
+
+CMD ["converge", "server"]
