@@ -60,6 +60,18 @@ def cli() -> None:
     type=click.Choice(["conditional", "interrupt"], case_sensitive=False),
     help="HITL strategy to use (default: conditional)",
 )
+@click.option(
+    "--agent-provider",
+    default=None,
+    type=click.Choice(["codex", "copilot"], case_sensitive=False),
+    help="Agent provider to use (default: from CONVERGE_AGENT_PROVIDER or codex)",
+)
+@click.option(
+    "--enable-codex-exec",
+    is_flag=True,
+    default=False,
+    help="Enable Codex CLI execution (requires OPENAI_API_KEY)",
+)
 def coordinate(
     goal: str,
     repos: tuple[str, ...],
@@ -70,6 +82,8 @@ def coordinate(
     no_llm: bool,
     no_tracing: bool,
     hil_mode: str,
+    agent_provider: str | None,
+    enable_codex_exec: bool,
 ) -> None:
     """Coordinate changes across multiple repositories."""
     load_environment()
@@ -80,6 +94,9 @@ def coordinate(
             os.environ["OPIK_TRACK_DISABLE"] = "true"
         configure_opik()
 
+        # Determine agent_provider from flag or env
+        final_agent_provider = agent_provider or os.getenv("CONVERGE_AGENT_PROVIDER", "codex")
+
         config = ConvergeConfig(
             goal=goal,
             repos=list(repos),
@@ -89,6 +106,8 @@ def coordinate(
             model=model,
             no_llm=no_llm,
             hil_mode=cast(Literal["conditional", "interrupt"], hil_mode.lower()),
+            agent_provider=final_agent_provider,
+            enable_codex_exec=enable_codex_exec,
         )
 
         coordinator = Coordinator(config)

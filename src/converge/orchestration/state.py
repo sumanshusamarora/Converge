@@ -21,6 +21,17 @@ class RepositorySignal(TypedDict):
     constraints: list[str]
 
 
+class RepoPlan(TypedDict):
+    """Agent plan result for a single repository."""
+
+    repo_path: str
+    provider: str
+    status: str
+    summary: str
+    proposed_changes: list[str]
+    questions_for_hitl: list[str]
+
+
 Status = Literal["CONVERGED", "HITL_REQUIRED", "FAILED"]
 HILMode = Literal["conditional", "interrupt"]
 
@@ -41,3 +52,5 @@ class OrchestrationState(TypedDict, total=False):
     no_llm: bool
     human_decision: dict[str, Any] | None
     hil_mode: HILMode
+    repo_plans: list[RepoPlan]
+    agent_provider: str
