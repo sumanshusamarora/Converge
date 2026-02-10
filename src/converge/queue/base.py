@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult
 
@@ -45,3 +46,37 @@ class TaskQueue(ABC):
     @abstractmethod
     def get(self, task_id: str) -> TaskRecord:
         """Return latest task record by id."""
+
+    @abstractmethod
+    def get_hitl_questions(self, task_id: str) -> list[str]:
+        """Get HITL questions for a task in HITL_REQUIRED status.
+
+        Args:
+            task_id: The task ID
+
+        Returns:
+            List of questions that require human judgment
+        """
+
+    @abstractmethod
+    def get_hitl_resolution(self, task_id: str) -> dict[str, Any] | None:
+        """Get HITL resolution if it exists.
+
+        Args:
+            task_id: The task ID
+
+        Returns:
+            Resolution data if available, None otherwise
+        """
+
+    @abstractmethod
+    def resolve_hitl(self, task_id: str, resolution: dict[str, Any]) -> None:
+        """Resolve HITL questions and transition task back to PENDING.
+
+        Args:
+            task_id: The task ID
+            resolution: Human decision/resolution data
+
+        Raises:
+            ValueError: If task is not in HITL_REQUIRED status
+        """

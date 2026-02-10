@@ -29,12 +29,17 @@ class PollingWorker:
         for task in tasks:
             try:
                 self._queue.mark_running(task.id)
+
+                # Check if task has HITL resolution (resumed from HITL_REQUIRED)
+                hitl_resolution = self._queue.get_hitl_resolution(task.id)
+
                 outcome = run_coordinate(
                     goal=task.request.goal,
                     repos=task.request.repos,
                     max_rounds=task.request.max_rounds,
                     agent_provider=task.request.agent_provider,
                     base_output_dir=Path(".converge"),
+                    hitl_resolution=hitl_resolution,
                 )
 
                 if outcome.status == "FAILED":

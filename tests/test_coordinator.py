@@ -180,3 +180,55 @@ def test_interrupt_graph_converged_skips_hitl_node(
     assert final_state["status"] == "CONVERGED"
     event_nodes = [event["node"] for event in final_state["events"]]
     assert "hitl_interrupt_node" not in event_nodes
+
+
+def test_handoff_pack_structure_created(
+    repo_paths: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """Test that handoff pack artifacts are created in repo-plans/ directory."""
+    api_dir, web_dir = repo_paths
+    config = ConvergeConfig(
+        goal="Add discount code support",
+        repos=[str(api_dir), str(web_dir)],
+        output_dir=str(tmp_path / ".converge"),
+        no_llm=True,
+        hil_mode="conditional",
+        agent_provider="copilot",
+    )
+
+    coordinator = Coordinator(config)
+    _ = coordinator.coordinate()
+
+    run_dir = coordinator.run_dir
+    repo_plans_dir = run_dir / "repo-plans"
+
+    # Check repo-plans directory exists
+    assert repo_plans_dir.exists()
+
+    # Check per-repo directories exist
+    api_plan_dir = repo_plans_dir / "api"
+    web_plan_dir = repo_plans_dir / "web"
+    assert api_plan_dir.exists()
+    assert web_plan_dir.exists()
+
+    # Check required files exist in each repo plan
+    for plan_dir in [api_plan_dir, web_plan_dir]:
+        assert (plan_dir / "plan.md").exists()
+        assert (plan_dir / "copilot-prompt.txt").exists()
+        assert (plan_dir / "commands.sh").exists()
+
+    # Verify content of plan.md
+    api_plan_md = (api_plan_dir / "plan.md").read_text()
+    assert "Add discount code support" in api_plan_md
+    assert "copilot" in api_plan_md.lower()
+
+    # Verify copilot-prompt.txt has content
+    api_prompt = (api_plan_dir / "copilot-prompt.txt").read_text()
+    assert len(api_prompt) > 0
+    assert "Add discount code support" in api_prompt or "Copilot" in api_prompt
+
+    # Verify commands.sh has shell commands
+    api_commands = (api_plan_dir / "commands.sh").read_text()
+    assert "#!/bin/bash" in api_commands
+    assert "pytest" in api_commands or "npm" in api_commands  # Python or Node commands

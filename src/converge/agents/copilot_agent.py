@@ -79,6 +79,7 @@ class GitHubCopilotAgent(CodingAgent):
             "prompt_length": len(prompt),
             "repo_path": str(task.repo.path),
             "repo_kind": task.repo.kind,
+            "signals": task.repo.signals,
         }
 
         logger.info(
