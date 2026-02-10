@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 
 from converge.core.config import load_queue_settings, load_server_settings
 from converge.integrations.jira import jira_payload_to_task
@@ -96,16 +96,21 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/tasks")
-    def list_tasks(status: str | None = None, limit: int = 100, offset: int = 0) -> list[TaskRecord]:
+    def list_tasks(
+        status: str | None = None, limit: int = 100, offset: int = 0
+    ) -> list[TaskRecord]:
         """List tasks with optional status filter and pagination."""
         try:
             status_filter = TaskStatus(status) if status else None
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}") from exc
-        
-        if not hasattr(queue, 'list_tasks'):
+
+        if not hasattr(queue, "list_tasks"):
             raise HTTPException(status_code=501, detail="list_tasks not implemented")
-        return queue.list_tasks(status_filter=status_filter, limit=limit, offset=offset)
+        result: list[TaskRecord] = queue.list_tasks(
+            status_filter=status_filter, limit=limit, offset=offset
+        )
+        return result
 
     @app.get("/api/tasks/{task_id}", response_model=TaskRecord)
     def get_task(task_id: str) -> TaskRecord:
@@ -148,10 +153,10 @@ def create_app() -> FastAPI:
         """List files in the artifacts directory for a specific run."""
         output_dir = os.getenv("CONVERGE_OUTPUT_DIR", ".converge")
         run_path = Path(output_dir) / run_id
-        
+
         if not run_path.exists() or not run_path.is_dir():
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-        
+
         # Collect files
         files = []
         for item in run_path.rglob("*"):
@@ -161,7 +166,7 @@ def create_app() -> FastAPI:
                     "path": str(rel_path),
                     "size": item.stat().st_size,
                 })
-        
+
         return {"run_id": run_id, "files": files}
 
     @app.get("/api/runs/{run_id}/files/{path:path}")
@@ -170,7 +175,7 @@ def create_app() -> FastAPI:
         output_dir = os.getenv("CONVERGE_OUTPUT_DIR", ".converge")
         run_path = Path(output_dir) / run_id
         file_path = run_path / path
-        
+
         # Security: ensure the file is within the run directory
         try:
             file_path = file_path.resolve()
@@ -179,10 +184,10 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=403, detail="Access denied")
         except Exception as exc:
             raise HTTPException(status_code=400, detail="Invalid path") from exc
-        
+
         if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail=f"File {path} not found")
-        
+
         return FileResponse(file_path)
 
     @app.get("/tasks/{task_id}", response_model=TaskRecord)

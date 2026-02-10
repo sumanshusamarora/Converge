@@ -249,7 +249,6 @@ class DatabaseTaskQueue(TaskQueue):
             status_reason=row.status_reason,
             resolution_json=row.resolution_json,
         )
-        )
 
     def _build_dedupe_key(self, source: str | None, idempotency_key: str | None) -> str | None:
         if not source or not idempotency_key:
