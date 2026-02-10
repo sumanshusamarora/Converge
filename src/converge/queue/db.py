@@ -52,6 +52,8 @@ class TaskRow(Base):
     dedupe_key: Mapped[str | None] = mapped_column(
         String(320), nullable=True, unique=True, index=True
     )
+    hitl_questions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hitl_resolution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class DatabaseTaskQueue(TaskQueue):
@@ -165,6 +167,9 @@ class DatabaseTaskQueue(TaskQueue):
             row.status = result.status.value
             row.artifacts_dir = result.artifacts_dir
             row.last_error = None
+            # Persist HITL questions when status is HITL_REQUIRED
+            if result.status == TaskStatus.HITL_REQUIRED and result.hitl_questions:
+                row.hitl_questions_json = json.dumps(result.hitl_questions)
             row.updated_at = self._now()
             session.commit()
 
@@ -188,6 +193,34 @@ class DatabaseTaskQueue(TaskQueue):
         with self._session_factory() as session:
             row = self._get_row(session, task_id)
             return self._to_record(row)
+
+    def get_hitl_questions(self, task_id: str) -> list[str]:
+        """Get HITL questions for a task in HITL_REQUIRED status."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            if row.hitl_questions_json:
+                return cast(list[str], json.loads(row.hitl_questions_json))
+            return []
+
+    def get_hitl_resolution(self, task_id: str) -> dict[str, object] | None:
+        """Get HITL resolution if it exists."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            if row.hitl_resolution_json:
+                return cast(dict[str, object], json.loads(row.hitl_resolution_json))
+            return None
+
+    def resolve_hitl(self, task_id: str, resolution: dict[str, object]) -> None:
+        """Resolve HITL questions and transition task back to PENDING."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            if row.status != TaskStatus.HITL_REQUIRED.value:
+                raise ValueError(f"Task {task_id} is not in HITL_REQUIRED status")
+            row.hitl_resolution_json = json.dumps(resolution)
+            row.status = TaskStatus.PENDING.value
+            row.claimed_at = None
+            row.updated_at = self._now()
+            session.commit()
 
     def _get_row(self, session: Session, task_id: str) -> TaskRow:
         row = cast(TaskRow | None, session.get(TaskRow, task_id))
@@ -227,6 +260,8 @@ class DatabaseTaskQueue(TaskQueue):
             "source_event_id": "TEXT",
             "idempotency_key": "TEXT",
             "dedupe_key": "TEXT",
+            "hitl_questions_json": "TEXT",
+            "hitl_resolution_json": "TEXT",
         }
         with self._engine.begin() as conn:
             for column_name, column_sql_type in add_specs.items():

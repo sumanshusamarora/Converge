@@ -55,3 +55,4 @@ class OrchestrationState(TypedDict, total=False):
     hil_mode: HILMode
     repo_plans: list[RepoPlan]
     agent_provider: str
+    hitl_resolution: dict[str, Any] | None

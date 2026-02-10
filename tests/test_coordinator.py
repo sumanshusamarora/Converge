@@ -198,7 +198,7 @@ def test_handoff_pack_structure_created(
     )
 
     coordinator = Coordinator(config)
-    final_state = coordinator.coordinate()
+    _ = coordinator.coordinate()
 
     run_dir = coordinator.run_dir
     repo_plans_dir = run_dir / "repo-plans"

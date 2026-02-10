@@ -433,11 +433,11 @@ Proposed Changes:
                 )
             else:
                 # Generate a basic prompt if not available
-                basic_prompt = f"""# Task for {plan['repo_path']}
+                basic_prompt = f"""# Task for {plan["repo_path"]}
 
-Goal: {state['goal']}
+Goal: {state["goal"]}
 
-{plan['summary']}
+{plan["summary"]}
 
 Proposed Changes:
 """

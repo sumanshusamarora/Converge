@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from converge.queue.base import TaskQueue
 from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult
 
@@ -44,3 +46,15 @@ class SQSTaskQueue(TaskQueue):
     def get(self, task_id: str) -> TaskRecord:
         """Get a task from SQS."""
         raise NotImplementedError("TODO: implement SQS get")
+
+    def get_hitl_questions(self, task_id: str) -> list[str]:
+        """Get HITL questions from SQS."""
+        raise NotImplementedError("TODO: implement SQS get_hitl_questions")
+
+    def get_hitl_resolution(self, task_id: str) -> dict[str, Any] | None:
+        """Get HITL resolution from SQS."""
+        raise NotImplementedError("TODO: implement SQS get_hitl_resolution")
+
+    def resolve_hitl(self, task_id: str, resolution: dict[str, Any]) -> None:
+        """Resolve HITL in SQS."""
+        raise NotImplementedError("TODO: implement SQS resolve_hitl")
