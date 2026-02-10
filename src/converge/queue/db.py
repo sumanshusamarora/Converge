@@ -52,6 +52,8 @@ class TaskRow(Base):
     dedupe_key: Mapped[str | None] = mapped_column(
         String(320), nullable=True, unique=True, index=True
     )
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class DatabaseTaskQueue(TaskQueue):
@@ -165,6 +167,7 @@ class DatabaseTaskQueue(TaskQueue):
             row.status = result.status.value
             row.artifacts_dir = result.artifacts_dir
             row.last_error = None
+            row.status_reason = result.status_reason
             row.updated_at = self._now()
             session.commit()
 
@@ -189,6 +192,42 @@ class DatabaseTaskQueue(TaskQueue):
             row = self._get_row(session, task_id)
             return self._to_record(row)
 
+    def list_tasks(
+        self, status_filter: TaskStatus | None = None, limit: int = 100, offset: int = 0
+    ) -> list[TaskRecord]:
+        """List tasks with optional status filter and pagination."""
+        with self._session_factory() as session:
+            query = select(TaskRow).order_by(TaskRow.created_at.desc())
+            if status_filter is not None:
+                query = query.where(TaskRow.status == status_filter.value)
+            query = query.limit(limit).offset(offset)
+            rows = session.scalars(query).all()
+            return [self._to_record(row) for row in rows]
+
+    def resolve_hitl(self, task_id: str, resolution_json: str) -> None:
+        """Resolve a HITL task by setting resolution and changing status to PENDING."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            if row.status != TaskStatus.HITL_REQUIRED.value:
+                raise ValueError(
+                    f"Task {task_id} is not in HITL_REQUIRED state (current: {row.status})"
+                )
+            row.resolution_json = resolution_json
+            row.status = TaskStatus.PENDING.value
+            row.updated_at = self._now()
+            session.commit()
+
+    def cancel(self, task_id: str) -> None:
+        """Cancel a task."""
+        with self._session_factory() as session:
+            row = self._get_row(session, task_id)
+            if row.status in {TaskStatus.SUCCEEDED.value, TaskStatus.FAILED.value}:
+                raise ValueError(f"Cannot cancel task {task_id} with status {row.status}")
+            row.status = TaskStatus.CANCELLED.value
+            row.updated_at = self._now()
+            session.commit()
+
+
     def _get_row(self, session: Session, task_id: str) -> TaskRow:
         row = cast(TaskRow | None, session.get(TaskRow, task_id))
         if row is None:
@@ -207,6 +246,9 @@ class DatabaseTaskQueue(TaskQueue):
             artifacts_dir=row.artifacts_dir,
             source=row.source,
             idempotency_key=row.idempotency_key,
+            status_reason=row.status_reason,
+            resolution_json=row.resolution_json,
+        )
         )
 
     def _build_dedupe_key(self, source: str | None, idempotency_key: str | None) -> str | None:
@@ -227,6 +269,8 @@ class DatabaseTaskQueue(TaskQueue):
             "source_event_id": "TEXT",
             "idempotency_key": "TEXT",
             "dedupe_key": "TEXT",
+            "status_reason": "TEXT",
+            "resolution_json": "TEXT",
         }
         with self._engine.begin() as conn:
             for column_name, column_sql_type in add_specs.items():

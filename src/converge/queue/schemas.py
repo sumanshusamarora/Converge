@@ -45,6 +45,8 @@ class TaskRecord(BaseModel):
     artifacts_dir: str | None = None
     source: str | None = None
     idempotency_key: str | None = None
+    status_reason: str | None = None
+    resolution_json: str | None = None
 
 
 class TaskResult(BaseModel):
@@ -55,3 +57,4 @@ class TaskResult(BaseModel):
     artifacts_dir: str | None = None
     hitl_questions: list[str] = Field(default_factory=list)
     details: dict[str, Any] = Field(default_factory=dict)
+    status_reason: str | None = None
