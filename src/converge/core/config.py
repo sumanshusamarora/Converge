@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ class ConvergeConfig:
     log_level: str = "INFO"
     model: str | None = None
     no_llm: bool = False
+    hil_mode: Literal["conditional", "interrupt"] = "conditional"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -30,4 +31,6 @@ class ConvergeConfig:
             raise ValueError("Repository list contains duplicates")
         if self.max_rounds < 1:
             raise ValueError("max_rounds must be at least 1")
+        if self.hil_mode not in {"conditional", "interrupt"}:
+            raise ValueError("hil_mode must be either 'conditional' or 'interrupt'")
         logger.info("Config initialized: goal=%s, repos=%s", self.goal, self.repos)

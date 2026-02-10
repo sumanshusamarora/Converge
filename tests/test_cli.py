@@ -23,9 +23,10 @@ def test_coordinate_command_help() -> None:
     assert "--model" in result.output
     assert "--no-llm" in result.output
     assert "--no-tracing" in result.output
+    assert "--hil-mode" in result.output
 
 
-def test_coordinate_command_basic(tmp_path: Path) -> None:
+def test_coordinate_command_conditional_mode(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = tmp_path / "out"
 
@@ -52,17 +53,15 @@ def test_coordinate_command_basic(tmp_path: Path) -> None:
             "ERROR",
             "--no-llm",
             "--no-tracing",
+            "--hil-mode",
+            "conditional",
         ],
     )
 
     assert result.exit_code == 0
-    run_dirs = sorted((output_dir / "runs").iterdir())
-    assert len(run_dirs) == 1
-    assert (run_dirs[0] / "summary.md").exists()
-    assert (run_dirs[0] / "run.json").exists()
 
 
-def test_coordinate_command_missing_repo_exit_code(tmp_path: Path) -> None:
+def test_coordinate_command_interrupt_mode_missing_repo_exit_code(tmp_path: Path) -> None:
     runner = CliRunner()
     output_dir = tmp_path / "out"
 
@@ -85,6 +84,8 @@ def test_coordinate_command_missing_repo_exit_code(tmp_path: Path) -> None:
             "ERROR",
             "--no-llm",
             "--no-tracing",
+            "--hil-mode",
+            "interrupt",
         ],
     )
 

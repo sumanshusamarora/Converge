@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+from typing import Literal, cast
 
 import click
 
@@ -53,6 +54,12 @@ def cli() -> None:
     default=False,
     help="Disable tracing for this run only",
 )
+@click.option(
+    "--hil-mode",
+    default="conditional",
+    type=click.Choice(["conditional", "interrupt"], case_sensitive=False),
+    help="HITL strategy to use (default: conditional)",
+)
 def coordinate(
     goal: str,
     repos: tuple[str, ...],
@@ -62,6 +69,7 @@ def coordinate(
     model: str | None,
     no_llm: bool,
     no_tracing: bool,
+    hil_mode: str,
 ) -> None:
     """Coordinate changes across multiple repositories."""
     load_environment()
@@ -80,6 +88,7 @@ def coordinate(
             log_level=log_level,
             model=model,
             no_llm=no_llm,
+            hil_mode=cast(Literal["conditional", "interrupt"], hil_mode.lower()),
         )
 
         coordinator = Coordinator(config)

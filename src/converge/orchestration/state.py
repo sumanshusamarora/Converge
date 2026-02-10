@@ -22,9 +22,10 @@ class RepositorySignal(TypedDict):
 
 
 Status = Literal["CONVERGED", "HITL_REQUIRED", "FAILED"]
+HILMode = Literal["conditional", "interrupt"]
 
 
-class OrchestrationState(TypedDict):
+class OrchestrationState(TypedDict, total=False):
     """State container shared by LangGraph nodes."""
 
     goal: str
@@ -38,3 +39,5 @@ class OrchestrationState(TypedDict):
     output_dir: str
     model: str | None
     no_llm: bool
+    human_decision: dict[str, Any] | None
+    hil_mode: HILMode

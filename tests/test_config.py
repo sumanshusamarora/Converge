@@ -17,6 +17,7 @@ def test_converge_config_valid() -> None:
     assert config.log_level == "INFO"
     assert config.model is None
     assert config.no_llm is False
+    assert config.hil_mode == "conditional"
 
 
 def test_converge_config_custom_params() -> None:
@@ -28,12 +29,14 @@ def test_converge_config_custom_params() -> None:
         log_level="DEBUG",
         model="gpt-4o-mini",
         no_llm=True,
+        hil_mode="interrupt",
     )
     assert config.max_rounds == 3
     assert config.output_dir == "/tmp/output"
     assert config.log_level == "DEBUG"
     assert config.model == "gpt-4o-mini"
     assert config.no_llm is True
+    assert config.hil_mode == "interrupt"
 
 
 def test_converge_config_empty_goal() -> None:
@@ -44,3 +47,8 @@ def test_converge_config_empty_goal() -> None:
 def test_converge_config_no_repos() -> None:
     with pytest.raises(ValueError, match="At least one repository must be specified"):
         ConvergeConfig(goal="Some goal", repos=[])
+
+
+def test_converge_config_invalid_hil_mode() -> None:
+    with pytest.raises(ValueError, match="hil_mode must be either 'conditional' or 'interrupt'"):
+        ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")  # type: ignore[arg-type]

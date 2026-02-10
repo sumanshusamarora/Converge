@@ -26,7 +26,10 @@ def test_orchestration_state_shape() -> None:
         "output_dir": ".converge",
         "model": None,
         "no_llm": False,
+        "human_decision": None,
+        "hil_mode": "conditional",
     }
 
     assert state["goal"] == "Add feature X"
     assert state["repos"][0]["repo_type"] == "python"
+    assert state["hil_mode"] == "conditional"
