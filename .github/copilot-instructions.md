@@ -95,3 +95,15 @@ If you cannot run a command, explain why and propose the next best verification.
 - Provide evidence: commands run + results, and what tests were added/updated.
 - If tradeoffs exist, list them and recommend one option.
 - If blocked or risky, raise HITL with a concise question and 2–3 options.
+
+## Project Intent: Cross-Repo Coordination
+
+- This repository is not a single application.
+- It is an orchestration and governance tool.
+- Code changes in external repos may be proposed, not automatically applied.
+- Always think in terms of:
+  - responsibility boundaries
+  - contracts between repos
+  - safest place for logic to live
+- Prefer generating summaries, plans, and evidence
+  before suggesting implementation.

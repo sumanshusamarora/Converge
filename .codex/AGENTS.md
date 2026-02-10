@@ -95,3 +95,19 @@ If you cannot run a command, explain why and propose the next best verification.
 - Provide evidence: commands run + results, and what tests were added/updated.
 - If tradeoffs exist, list them and recommend one option.
 - If blocked or risky, raise HITL with a concise question and 2–3 options.
+
+## Project Context: Converge
+
+- This project coordinates multiple repositories that own different
+  responsibilities of a single system.
+- Repositories are peers, not mirrors.
+- The goal is early convergence, not exhaustive debate.
+- Agents must:
+  - identify ownership boundaries
+  - surface constraints and risks
+  - propose where work should happen
+  - stop after bounded rounds (default: 2)
+- If tradeoffs involve security, architecture, breaking changes,
+  or unclear ownership, escalate to HITL immediately.
+- Prefer plans, summaries, and artifacts over direct code changes
+  in early iterations.
