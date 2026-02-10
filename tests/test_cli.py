@@ -61,7 +61,9 @@ def test_coordinate_command_conditional_mode(tmp_path: Path) -> None:
     assert result.exit_code == 0
 
 
-def test_coordinate_command_interrupt_mode_missing_repo_exit_code(tmp_path: Path) -> None:
+def test_coordinate_command_interrupt_mode_missing_repo_exit_code(
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
     output_dir = tmp_path / "out"
 
@@ -99,3 +101,12 @@ def test_worker_command_help() -> None:
     assert result.exit_code == 0
     assert "--once" in result.output
     assert "--poll-interval" in result.output
+
+
+def test_server_command_help() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["server", "--help"])
+
+    assert result.exit_code == 0
+    assert "--host" in result.output
+    assert "--port" in result.output

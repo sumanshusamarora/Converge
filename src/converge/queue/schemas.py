@@ -43,6 +43,8 @@ class TaskRecord(BaseModel):
     request: TaskRequest
     last_error: str | None = None
     artifacts_dir: str | None = None
+    source: str | None = None
+    idempotency_key: str | None = None
 
 
 class TaskResult(BaseModel):

@@ -53,6 +53,16 @@ class QueueSettings(BaseModel):
     worker_max_attempts: int
 
 
+class ServerSettings(BaseModel):
+    """Server settings loaded from environment variables."""
+
+    host: str
+    port: int
+    webhook_secret: str | None
+    webhook_max_body_bytes: int
+    webhook_idempotency_ttl_seconds: int
+
+
 def load_queue_settings() -> QueueSettings:
     """Load queue and worker settings from environment with validation."""
     backend = os.getenv("CONVERGE_QUEUE_BACKEND", "db").strip().lower()
@@ -88,4 +98,42 @@ def load_queue_settings() -> QueueSettings:
         worker_poll_interval_seconds=worker_poll_interval_seconds,
         worker_batch_size=worker_batch_size,
         worker_max_attempts=worker_max_attempts,
+    )
+
+
+def load_server_settings() -> ServerSettings:
+    """Load HTTP server settings for webhook ingestion."""
+    host = os.getenv("CONVERGE_SERVER_HOST", "0.0.0.0")
+    try:
+        port = int(os.getenv("CONVERGE_SERVER_PORT", "8080"))
+    except ValueError as exc:
+        raise ValueError("CONVERGE_SERVER_PORT must be an integer") from exc
+
+    webhook_secret = os.getenv("CONVERGE_WEBHOOK_SECRET") or None
+
+    try:
+        webhook_max_body_bytes = int(os.getenv("CONVERGE_WEBHOOK_MAX_BODY_BYTES", "262144"))
+    except ValueError as exc:
+        raise ValueError("CONVERGE_WEBHOOK_MAX_BODY_BYTES must be an integer") from exc
+
+    try:
+        webhook_idempotency_ttl_seconds = int(
+            os.getenv("CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", "86400")
+        )
+    except ValueError as exc:
+        raise ValueError("CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS must be an integer") from exc
+
+    if port <= 0:
+        raise ValueError("CONVERGE_SERVER_PORT must be > 0")
+    if webhook_max_body_bytes <= 0:
+        raise ValueError("CONVERGE_WEBHOOK_MAX_BODY_BYTES must be > 0")
+    if webhook_idempotency_ttl_seconds <= 0:
+        raise ValueError("CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS must be > 0")
+
+    return ServerSettings(
+        host=host,
+        port=port,
+        webhook_secret=webhook_secret,
+        webhook_max_body_bytes=webhook_max_body_bytes,
+        webhook_idempotency_ttl_seconds=webhook_idempotency_ttl_seconds,
     )

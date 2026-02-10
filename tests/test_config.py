@@ -1,8 +1,13 @@
 """Tests for core configuration."""
 
 import pytest
+from pydantic import ValidationError
 
-from converge.core.config import ConvergeConfig, load_queue_settings
+from converge.core.config import (
+    ConvergeConfig,
+    load_queue_settings,
+    load_server_settings,
+)
 
 
 def test_converge_config_valid() -> None:
@@ -50,8 +55,8 @@ def test_converge_config_no_repos() -> None:
 
 
 def test_converge_config_invalid_hil_mode() -> None:
-    with pytest.raises(ValueError, match="hil_mode must be either 'conditional' or 'interrupt'"):
-        ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")
+    with pytest.raises(ValidationError, match="Input should be 'conditional' or 'interrupt'"):
+        ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")  # type: ignore[arg-type]
 
 
 def test_load_queue_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,3 +73,19 @@ def test_load_queue_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.worker_poll_interval_seconds == 2
     assert settings.worker_batch_size == 1
     assert settings.worker_max_attempts == 3
+
+
+def test_load_server_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CONVERGE_SERVER_HOST", raising=False)
+    monkeypatch.delenv("CONVERGE_SERVER_PORT", raising=False)
+    monkeypatch.delenv("CONVERGE_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("CONVERGE_WEBHOOK_MAX_BODY_BYTES", raising=False)
+    monkeypatch.delenv("CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", raising=False)
+
+    settings = load_server_settings()
+
+    assert settings.host == "0.0.0.0"
+    assert settings.port == 8080
+    assert settings.webhook_secret is None
+    assert settings.webhook_max_body_bytes == 262144
+    assert settings.webhook_idempotency_ttl_seconds == 86400

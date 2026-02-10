@@ -13,6 +13,18 @@ class RedisTaskQueue(TaskQueue):
         """Enqueue a task in Redis."""
         raise NotImplementedError("TODO: implement Redis enqueue")
 
+    def enqueue_with_dedupe(
+        self, request: TaskRequest, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord:
+        """Enqueue a task in Redis with idempotency support."""
+        raise NotImplementedError("TODO: implement Redis enqueue_with_dedupe")
+
+    def find_by_source_idempotency(
+        self, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord | None:
+        """Find a task by source/idempotency key in Redis."""
+        raise NotImplementedError("TODO: implement Redis find_by_source_idempotency")
+
     def poll_and_claim(self, limit: int) -> list[TaskRecord]:
         """Claim pending tasks from Redis."""
         raise NotImplementedError("TODO: implement Redis poll_and_claim")

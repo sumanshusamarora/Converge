@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 
-from converge.core.config import load_queue_settings
+from converge.core.config import load_queue_settings, load_server_settings
 from converge.core.env import load_environment
 from converge.core.logging import setup_logging
 from converge.observability.opik_client import configure_opik
@@ -129,7 +129,13 @@ def coordinate(
 
 
 @cli.command()
-@click.option("--once", "run_once", is_flag=True, default=False, help="Run one poll cycle and exit")
+@click.option(
+    "--once",
+    "run_once",
+    is_flag=True,
+    default=False,
+    help="Run one poll cycle and exit",
+)
 @click.option("--poll-interval", type=float, default=None, help="Polling interval in seconds")
 @click.option("--batch-size", type=int, default=None, help="Number of tasks to claim per cycle")
 @click.option(
@@ -171,6 +177,44 @@ def worker(
         sys.exit(1)
     except Exception as exc:
         logger.exception("Unexpected error during worker execution: %s", exc)
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--host", default=None, help="Server host")
+@click.option("--port", type=int, default=None, help="Server port")
+@click.option("--reload", is_flag=True, default=False, help="Enable auto-reload")
+@click.option(
+    "--log-level",
+    default="INFO",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
+    help="Logging level (default: INFO)",
+)
+def server(host: str | None, port: int | None, reload: bool, log_level: str) -> None:
+    """Run the webhook ingestion HTTP server."""
+    load_environment()
+    setup_logging(level=log_level)
+
+    try:
+        settings = load_server_settings()
+        resolved_host = host if host is not None else settings.host
+        resolved_port = port if port is not None else settings.port
+
+        import uvicorn
+
+        from converge.server.app import create_app
+
+        uvicorn.run(
+            create_app(),
+            host=resolved_host,
+            port=resolved_port,
+            reload=reload,
+        )
+    except ValueError as exc:
+        logger.error("Configuration error: %s", exc)
+        sys.exit(1)
+    except Exception as exc:
+        logger.exception("Unexpected error during server execution: %s", exc)
         sys.exit(1)
 
 

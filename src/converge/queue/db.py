@@ -7,7 +7,17 @@ from datetime import datetime, timezone
 from typing import cast
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Integer, String, Text, create_engine, select
+from sqlalchemy import (
+    DateTime,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    inspect,
+    select,
+    text,
+)
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from converge.core.config import load_queue_settings
@@ -36,6 +46,12 @@ class TaskRow(Base):
     artifacts_dir: Mapped[str | None] = mapped_column(Text, nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(
+        String(320), nullable=True, unique=True, index=True
+    )
 
 
 class DatabaseTaskQueue(TaskQueue):
@@ -47,10 +63,18 @@ class DatabaseTaskQueue(TaskQueue):
         self._dialect_name = self._engine.url.get_backend_name()
         self._max_attempts = load_queue_settings().worker_max_attempts
         Base.metadata.create_all(self._engine)
+        self._ensure_schema_extensions()
 
     def enqueue(self, request: TaskRequest) -> TaskRecord:
         """Enqueue a new pending task."""
+        return self.enqueue_with_dedupe(request, source=None, idempotency_key=None)
+
+    def enqueue_with_dedupe(
+        self, request: TaskRequest, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord:
+        """Enqueue a task and return existing record when dedupe key already exists."""
         now = self._now()
+        dedupe_key = self._build_dedupe_key(source=source, idempotency_key=idempotency_key)
         task_row = TaskRow(
             id=str(uuid4()),
             status=TaskStatus.PENDING.value,
@@ -62,11 +86,36 @@ class DatabaseTaskQueue(TaskQueue):
             artifacts_dir=None,
             claimed_at=None,
             claim_token=None,
+            source=source,
+            source_event_id=None,
+            idempotency_key=idempotency_key,
+            dedupe_key=dedupe_key,
         )
+
         with self._session_factory() as session:
-            session.add(task_row)
-            session.commit()
-            return self._to_record(task_row)
+            try:
+                session.add(task_row)
+                session.commit()
+                return self._to_record(task_row)
+            except IntegrityError:
+                session.rollback()
+                existing = self.find_by_source_idempotency(source, idempotency_key)
+                if existing is None:
+                    raise
+                return existing
+
+    def find_by_source_idempotency(
+        self, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord | None:
+        """Find a task by source/idempotency key pair."""
+        dedupe_key = self._build_dedupe_key(source=source, idempotency_key=idempotency_key)
+        if dedupe_key is None:
+            return None
+        with self._session_factory() as session:
+            row = session.scalar(select(TaskRow).where(TaskRow.dedupe_key == dedupe_key))
+            if row is None:
+                return None
+            return self._to_record(row)
 
     def poll_and_claim(self, limit: int) -> list[TaskRecord]:
         """Poll pending tasks and claim up to ``limit`` tasks atomically.
@@ -156,7 +205,41 @@ class DatabaseTaskQueue(TaskQueue):
             request=TaskRequest.model_validate(json.loads(row.request_json)),
             last_error=row.last_error,
             artifacts_dir=row.artifacts_dir,
+            source=row.source,
+            idempotency_key=row.idempotency_key,
         )
+
+    def _build_dedupe_key(self, source: str | None, idempotency_key: str | None) -> str | None:
+        if not source or not idempotency_key:
+            return None
+        return f"{source}:{idempotency_key}"
+
+    def _ensure_schema_extensions(self) -> None:
+        """Ensure idempotency/source columns and unique index exist.
+
+        No Alembic in this iteration, so this method performs idempotent schema
+        extension checks for existing deployments.
+        """
+        inspector = inspect(self._engine)
+        columns = {column["name"] for column in inspector.get_columns("tasks")}
+        add_specs: dict[str, str] = {
+            "source": "TEXT",
+            "source_event_id": "TEXT",
+            "idempotency_key": "TEXT",
+            "dedupe_key": "TEXT",
+        }
+        with self._engine.begin() as conn:
+            for column_name, column_sql_type in add_specs.items():
+                if column_name not in columns:
+                    conn.execute(
+                        text(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_sql_type}")
+                    )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "idx_tasks_source_dedupe_key_unique ON tasks(dedupe_key)"
+                )
+            )
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

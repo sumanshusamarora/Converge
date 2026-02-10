@@ -13,6 +13,18 @@ class SQSTaskQueue(TaskQueue):
         """Enqueue a task in SQS."""
         raise NotImplementedError("TODO: implement SQS enqueue")
 
+    def enqueue_with_dedupe(
+        self, request: TaskRequest, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord:
+        """Enqueue a task in SQS with idempotency support."""
+        raise NotImplementedError("TODO: implement SQS enqueue_with_dedupe")
+
+    def find_by_source_idempotency(
+        self, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord | None:
+        """Find a task by source/idempotency key in SQS."""
+        raise NotImplementedError("TODO: implement SQS find_by_source_idempotency")
+
     def poll_and_claim(self, limit: int) -> list[TaskRecord]:
         """Claim pending tasks from SQS."""
         raise NotImplementedError("TODO: implement SQS poll_and_claim")

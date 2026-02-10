@@ -15,6 +15,18 @@ class TaskQueue(ABC):
         """Enqueue a new task request."""
 
     @abstractmethod
+    def enqueue_with_dedupe(
+        self, request: TaskRequest, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord:
+        """Enqueue a task using source-aware idempotency when provided."""
+
+    @abstractmethod
+    def find_by_source_idempotency(
+        self, source: str | None, idempotency_key: str | None
+    ) -> TaskRecord | None:
+        """Find a task by source/idempotency key pair."""
+
+    @abstractmethod
     def poll_and_claim(self, limit: int) -> list[TaskRecord]:
         """Poll pending tasks and atomically claim up to ``limit`` tasks."""
 

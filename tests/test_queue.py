@@ -24,9 +24,7 @@ def _set_queue_env(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
 
 
-def test_enqueue_creates_pending_task(
-    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
-) -> None:
+def test_enqueue_creates_pending_task(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
     _set_queue_env(monkeypatch, sqlite_uri)
     queue = DatabaseTaskQueue(sqlite_uri)
 
@@ -36,9 +34,7 @@ def test_enqueue_creates_pending_task(
     assert task.attempts == 0
 
 
-def test_poll_and_claim_updates_status(
-    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
-) -> None:
+def test_poll_and_claim_updates_status(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
     _set_queue_env(monkeypatch, sqlite_uri)
     queue = DatabaseTaskQueue(sqlite_uri)
     task = queue.enqueue(TaskRequest(goal="Goal", repos=["repo_a"]))
