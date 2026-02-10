@@ -23,6 +23,10 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.1.0",
+    "python-dotenv",
+    "opik",
+    "langgraph",
+    "langchain[openai]",
 ]
 
 [project.optional-dependencies]
@@ -88,3 +92,7 @@ addopts = [
     "--strict-markers",
     "--tb=short",
 ]
+
+[[tool.mypy.overrides]]
+module = ["dotenv", "langgraph.*", "langchain", "langchain.*", "openai", "opik", "opik.*"]
+ignore_missing_imports = true
