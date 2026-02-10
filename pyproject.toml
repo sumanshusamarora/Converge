@@ -24,6 +24,8 @@ classifiers = [
 dependencies = [
     "click>=8.1.0",
     "python-dotenv",
+    "sqlalchemy",
+    "pydantic",
     "opik",
     "langgraph",
     "langchain[openai]",
@@ -77,6 +79,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -94,5 +97,5 @@ addopts = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["dotenv", "langgraph.*", "langchain", "langchain.*", "openai", "opik", "opik.*"]
+module = ["dotenv", "langgraph.*", "langchain", "langchain.*", "openai", "opik", "opik.*", "pydantic", "sqlalchemy", "sqlalchemy.*"]
 ignore_missing_imports = true

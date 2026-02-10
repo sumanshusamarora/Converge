@@ -2,7 +2,7 @@
 
 import pytest
 
-from converge.core.config import ConvergeConfig
+from converge.core.config import ConvergeConfig, load_queue_settings
 
 
 def test_converge_config_valid() -> None:
@@ -52,3 +52,19 @@ def test_converge_config_no_repos() -> None:
 def test_converge_config_invalid_hil_mode() -> None:
     with pytest.raises(ValueError, match="hil_mode must be either 'conditional' or 'interrupt'"):
         ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")  # type: ignore[arg-type]
+
+
+def test_load_queue_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CONVERGE_QUEUE_BACKEND", raising=False)
+    monkeypatch.delenv("SQLALCHEMY_DATABASE_URI", raising=False)
+    monkeypatch.delenv("CONVERGE_WORKER_POLL_INTERVAL_SECONDS", raising=False)
+    monkeypatch.delenv("CONVERGE_WORKER_BATCH_SIZE", raising=False)
+    monkeypatch.delenv("CONVERGE_WORKER_MAX_ATTEMPTS", raising=False)
+
+    settings = load_queue_settings()
+
+    assert settings.backend == "db"
+    assert settings.sqlalchemy_database_uri is None
+    assert settings.worker_poll_interval_seconds == 2
+    assert settings.worker_batch_size == 1
+    assert settings.worker_max_attempts == 3

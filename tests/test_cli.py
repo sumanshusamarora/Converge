@@ -90,3 +90,12 @@ def test_coordinate_command_interrupt_mode_missing_repo_exit_code(tmp_path: Path
     )
 
     assert result.exit_code == 2
+
+
+def test_worker_command_help() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["worker", "--help"])
+
+    assert result.exit_code == 0
+    assert "--once" in result.output
+    assert "--poll-interval" in result.output
