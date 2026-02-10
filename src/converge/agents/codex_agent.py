@@ -2,15 +2,18 @@
 
 This adapter uses OpenAI Codex (via OPENAI_API_KEY) to generate
 planning proposals. Execution via Codex CLI is disabled by default
-and requires explicit opt-in via CONVERGE_CODEX_ENABLED.
+and requires explicit opt-in via CONVERGE_CODEX_ENABLED and execution policy.
 """
 
 import logging
 import os
+import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from converge.agents.base import AgentProvider, AgentResult, AgentTask, CodingAgent
+from converge.agents.policy import ExecutionMode
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,194 @@ class CodexAgent(CodingAgent):
     def supports_execution(self) -> bool:
         """Return True (Codex can execute tools when enabled)."""
         return True
+
+    def execute(self, task: AgentTask) -> AgentResult:
+        """Execute changes for the given task.
+
+        This method enforces the execution policy and performs safety checks:
+        - Verify policy allows execution
+        - Check repository exists and has .git directory
+        - If create_branch: create new branch with prefix
+        - If require_git_clean: ensure working directory is clean
+        - Only execute allowlisted commands
+
+        Args:
+            task: The task to execute
+
+        Returns:
+            AgentResult with execution outcome
+        """
+        # Check if we have an execution policy
+        if task.execution_policy is None:
+            return AgentResult(
+                provider=self.provider,
+                status="FAILED",
+                summary="No execution policy provided",
+                proposed_changes=[],
+                questions_for_hitl=["Task requires execution_policy to execute"],
+                raw={"error": "no_execution_policy"},
+            )
+
+        policy = task.execution_policy
+
+        # Check if execution is allowed by policy
+        if policy.mode != ExecutionMode.EXECUTE_ALLOWED:
+            return AgentResult(
+                provider=self.provider,
+                status="HITL_REQUIRED",
+                summary="Execution not allowed by policy",
+                proposed_changes=[],
+                questions_for_hitl=[
+                    f"Execution policy mode is {policy.mode.value}",
+                    "To enable execution: set CONVERGE_CODEX_ENABLED=true and --allow-exec flag",
+                ],
+                raw={"policy_mode": policy.mode.value},
+            )
+
+        # Perform repository safety checks
+        repo_path = Path(task.repo.path)
+        if not repo_path.exists():
+            return AgentResult(
+                provider=self.provider,
+                status="FAILED",
+                summary=f"Repository path does not exist: {repo_path}",
+                proposed_changes=[],
+                questions_for_hitl=[f"Repository not found at {repo_path}"],
+                raw={"error": "repo_not_found", "path": str(repo_path)},
+            )
+
+        git_dir = repo_path / ".git"
+        if not git_dir.exists():
+            return AgentResult(
+                provider=self.provider,
+                status="FAILED",
+                summary=f"Not a git repository: {repo_path}",
+                proposed_changes=[],
+                questions_for_hitl=[f"No .git directory found at {repo_path}"],
+                raw={"error": "not_git_repo", "path": str(repo_path)},
+            )
+
+        # Check if working directory is clean (if required)
+        if policy.require_git_clean:
+            clean_check = self._check_git_clean(repo_path)
+            if not clean_check["clean"]:
+                return AgentResult(
+                    provider=self.provider,
+                    status="FAILED",
+                    summary="Working directory is not clean",
+                    proposed_changes=[],
+                    questions_for_hitl=[
+                        "Policy requires clean git working directory",
+                        f"Uncommitted changes: {clean_check.get('details', 'unknown')}",
+                    ],
+                    raw={"error": "git_not_clean", "details": clean_check},
+                )
+
+        # Create new branch if requested
+        branch_created = None
+        if policy.create_branch:
+            branch_result = self._create_branch(repo_path, policy.branch_prefix)
+            if not branch_result["success"]:
+                return AgentResult(
+                    provider=self.provider,
+                    status="FAILED",
+                    summary="Failed to create branch",
+                    proposed_changes=[],
+                    questions_for_hitl=[
+                        f"Could not create branch: {branch_result.get('error', 'unknown')}"
+                    ],
+                    raw={"error": "branch_creation_failed", "details": branch_result},
+                )
+            branch_created = branch_result["branch_name"]
+            logger.info("Created branch: %s", branch_created)
+
+        # At this point, we would execute Codex CLI or run commands
+        # For now, return a placeholder indicating execution is not yet implemented
+        logger.warning("Codex CLI execution not yet fully implemented")
+
+        return AgentResult(
+            provider=self.provider,
+            status="HITL_REQUIRED",
+            summary="Execution passed safety checks but Codex CLI not yet implemented",
+            proposed_changes=[
+                "Safety checks passed",
+                f"Repository verified at {repo_path}",
+                f"Branch created: {branch_created}" if branch_created else "No branch created",
+            ],
+            questions_for_hitl=[
+                "Codex CLI execution interface not yet implemented",
+                "Future iterations will invoke Codex CLI with tool use",
+            ],
+            raw={
+                "safety_checks_passed": True,
+                "repo_path": str(repo_path),
+                "branch_created": branch_created,
+                "policy": {
+                    "mode": policy.mode.value,
+                    "create_branch": policy.create_branch,
+                    "require_git_clean": policy.require_git_clean,
+                },
+            },
+        )
+
+    def _check_git_clean(self, repo_path: Path) -> dict[str, object]:
+        """Check if git working directory is clean.
+
+        Args:
+            repo_path: Path to repository
+
+        Returns:
+            Dict with 'clean' boolean and optional 'details'
+        """
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            output = result.stdout.strip()
+            return {
+                "clean": len(output) == 0,
+                "details": output if output else None,
+            }
+        except subprocess.CalledProcessError as e:
+            logger.error("Failed to check git status: %s", e)
+            return {"clean": False, "details": f"Error: {e}"}
+
+    def _create_branch(self, repo_path: Path, branch_prefix: str) -> dict[str, object]:
+        """Create a new git branch with timestamp.
+
+        Args:
+            repo_path: Path to repository
+            branch_prefix: Prefix for branch name
+
+        Returns:
+            Dict with 'success' boolean, 'branch_name', and optional 'error'
+        """
+        try:
+            # Generate branch name with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            branch_name = f"{branch_prefix}{timestamp}"
+
+            # Create and checkout new branch
+            subprocess.run(
+                ["git", "checkout", "-b", branch_name],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            return {"success": True, "branch_name": branch_name}
+        except subprocess.CalledProcessError as e:
+            logger.error("Failed to create branch: %s", e)
+            return {
+                "success": False,
+                "error": str(e),
+                "stderr": e.stderr if hasattr(e, "stderr") else None,
+            }
 
     def plan(self, task: AgentTask) -> AgentResult:
         """Generate a plan using Codex prompt or heuristic.

@@ -12,7 +12,11 @@ try:
     from langgraph.graph import END, StateGraph
     from langgraph.types import interrupt
 except ImportError:  # pragma: no cover - used in offline/test fallback environments
-    from converge.orchestration.langgraph_compat import END, StateGraph, interrupt
+    from converge.orchestration.langgraph_compat import (  # type: ignore[assignment]
+        END,
+        StateGraph,
+        interrupt,
+    )
 
 from converge.agents.base import AgentTask, RepoContext
 from converge.agents.factory import create_agent

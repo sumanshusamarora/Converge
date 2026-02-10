@@ -1,5 +1,6 @@
 """Tests for agent abstraction layer."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -296,3 +297,266 @@ def test_config_validates_agent_provider() -> None:
             repos=["repo1"],
             agent_provider="invalid",
         )
+
+
+def test_copilot_execute_always_returns_hitl() -> None:
+    """Test that CopilotAgent.execute() always returns HITL_REQUIRED."""
+    from converge.agents.policy import ExecutionMode, ExecutionPolicy
+
+    agent = GitHubCopilotAgent()
+
+    # Create a task with execution allowed
+    repo_context = RepoContext(
+        path=Path("/tmp/test"),
+        kind="backend",
+        signals=["pyproject.toml"],
+    )
+
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_ALLOWED,
+        allowlisted_commands=["pytest"],
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=policy,
+    )
+
+    result = agent.execute(task)
+
+    assert result.provider == AgentProvider.COPILOT
+    assert result.status == "HITL_REQUIRED"
+    assert "plan-only" in result.summary.lower()
+    assert len(result.questions_for_hitl) > 0
+    assert "copilot_plan_only" in result.raw.get("reason", "")
+
+
+def test_codex_execute_no_policy() -> None:
+    """Test that CodexAgent.execute() fails when no policy is provided."""
+    agent = CodexAgent()
+
+    repo_context = RepoContext(
+        path=Path("/tmp/test"),
+        kind="backend",
+        signals=["pyproject.toml"],
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=None,  # No policy
+    )
+
+    result = agent.execute(task)
+
+    assert result.provider == AgentProvider.CODEX
+    assert result.status == "FAILED"
+    assert "no execution policy" in result.summary.lower()
+
+
+def test_codex_execute_plan_only_mode(tmp_path: Path) -> None:
+    """Test that CodexAgent.execute() returns HITL when mode is PLAN_ONLY."""
+    from converge.agents.policy import ExecutionMode, ExecutionPolicy
+
+    agent = CodexAgent()
+
+    repo_dir = tmp_path / "test-repo"
+    repo_dir.mkdir()
+
+    repo_context = RepoContext(
+        path=repo_dir,
+        kind="backend",
+        signals=["pyproject.toml"],
+    )
+
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.PLAN_ONLY,  # Planning only
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=policy,
+    )
+
+    result = agent.execute(task)
+
+    assert result.provider == AgentProvider.CODEX
+    assert result.status == "HITL_REQUIRED"
+    assert "not allowed by policy" in result.summary.lower()
+
+
+def test_codex_execute_repo_not_found() -> None:
+    """Test that CodexAgent.execute() fails when repository doesn't exist."""
+    from converge.agents.policy import ExecutionMode, ExecutionPolicy
+
+    agent = CodexAgent()
+
+    repo_context = RepoContext(
+        path=Path("/nonexistent/repo"),
+        kind="backend",
+        signals=[],
+    )
+
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_ALLOWED,
+        allowlisted_commands=["pytest"],
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=policy,
+    )
+
+    result = agent.execute(task)
+
+    assert result.provider == AgentProvider.CODEX
+    assert result.status == "FAILED"
+    assert "does not exist" in result.summary.lower()
+
+
+def test_codex_execute_not_git_repo(tmp_path: Path) -> None:
+    """Test that CodexAgent.execute() fails when directory is not a git repo."""
+    from converge.agents.policy import ExecutionMode, ExecutionPolicy
+
+    agent = CodexAgent()
+
+    repo_dir = tmp_path / "not-git"
+    repo_dir.mkdir()
+
+    repo_context = RepoContext(
+        path=repo_dir,
+        kind="backend",
+        signals=[],
+    )
+
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_ALLOWED,
+        allowlisted_commands=["pytest"],
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=policy,
+    )
+
+    result = agent.execute(task)
+
+    assert result.provider == AgentProvider.CODEX
+    assert result.status == "FAILED"
+    assert "not a git repository" in result.summary.lower()
+
+
+def test_codex_execute_safety_checks_pass(tmp_path: Path) -> None:
+    """Test that CodexAgent.execute() passes safety checks for valid git repo."""
+    from converge.agents.policy import ExecutionMode, ExecutionPolicy
+
+    agent = CodexAgent()
+
+    # Create a git repository
+    repo_dir = tmp_path / "git-repo"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+
+    repo_context = RepoContext(
+        path=repo_dir,
+        kind="backend",
+        signals=["pyproject.toml"],
+    )
+
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_ALLOWED,
+        allowlisted_commands=["pytest"],
+        create_branch=False,  # Don't create branch for this test
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=policy,
+    )
+
+    result = agent.execute(task)
+
+    assert result.provider == AgentProvider.CODEX
+    # Should be HITL_REQUIRED because CLI not implemented yet
+    assert result.status == "HITL_REQUIRED"
+    assert "passed safety checks" in result.summary.lower()
+    assert result.raw.get("safety_checks_passed") is True
+
+
+def test_codex_execute_creates_branch(tmp_path: Path) -> None:
+    """Test that CodexAgent.execute() creates a branch when requested."""
+    from converge.agents.policy import ExecutionMode, ExecutionPolicy
+
+    agent = CodexAgent()
+
+    # Create a git repository with initial commit
+    repo_dir = tmp_path / "git-repo"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
+    (repo_dir / "README.md").write_text("# Test", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+    )
+
+    repo_context = RepoContext(
+        path=repo_dir,
+        kind="backend",
+        signals=["README.md"],
+    )
+
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_ALLOWED,
+        allowlisted_commands=["pytest"],
+        create_branch=True,
+        branch_prefix="test/",
+    )
+
+    task = AgentTask(
+        goal="Test execution",
+        repo=repo_context,
+        instructions="Test",
+        execution_policy=policy,
+    )
+
+    result = agent.execute(task)
+
+    # Should succeed in creating branch
+    assert result.raw.get("branch_created") is not None
+    branch_name = result.raw["branch_created"]
+    assert branch_name.startswith("test/")
+
+    # Verify branch exists
+    branches_result = subprocess.run(
+        ["git", "branch", "--list", branch_name],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+    )
+    assert branch_name in branches_result.stdout
