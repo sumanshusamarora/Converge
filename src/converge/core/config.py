@@ -9,21 +9,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ConvergeConfig:
-    """Configuration for a Converge coordination session.
-
-    Attributes:
-        goal: The high-level goal to achieve across repositories
-        repos: List of repository identifiers to coordinate
-        max_rounds: Maximum number of convergence rounds (default: 2)
-        output_dir: Base directory for output artifacts (default: .converge)
-        log_level: Logging level (default: INFO)
-    """
+    """Configuration for a Converge coordination session."""
 
     goal: str
     repos: list[str]
     max_rounds: int = 2
     output_dir: str = ".converge"
     log_level: str = "INFO"
+    model: str | None = None
+    no_llm: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
