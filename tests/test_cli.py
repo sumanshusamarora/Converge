@@ -1,5 +1,7 @@
 """Tests for CLI."""
 
+from pathlib import Path
+
 from click.testing import CliRunner
 
 from converge.cli.main import cli
@@ -52,7 +54,7 @@ def test_coordinate_command_missing_repos() -> None:
     assert "Missing option '--repos'" in result.output
 
 
-def test_coordinate_command_basic(tmp_path: str) -> None:
+def test_coordinate_command_basic(tmp_path: Path) -> None:
     """Test basic coordinate command execution."""
     runner = CliRunner()
     output_dir = tmp_path
@@ -77,7 +79,7 @@ def test_coordinate_command_basic(tmp_path: str) -> None:
     assert result.exit_code in [0, 2]  # 0 = converged, 2 = escalated
 
 
-def test_coordinate_command_single_repo(tmp_path: str) -> None:
+def test_coordinate_command_single_repo(tmp_path: Path) -> None:
     """Test coordinate with single repository."""
     runner = CliRunner()
     output_dir = tmp_path
@@ -100,7 +102,7 @@ def test_coordinate_command_single_repo(tmp_path: str) -> None:
     assert result.exit_code in [0, 2]
 
 
-def test_coordinate_command_custom_max_rounds(tmp_path: str) -> None:
+def test_coordinate_command_custom_max_rounds(tmp_path: Path) -> None:
     """Test coordinate with custom max rounds."""
     runner = CliRunner()
     output_dir = tmp_path
