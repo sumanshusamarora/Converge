@@ -107,3 +107,7 @@ If you cannot run a command, explain why and propose the next best verification.
   - safest place for logic to live
 - Prefer generating summaries, plans, and evidence
   before suggesting implementation.
+
+## Documentation sync (required)
+- Any change affecting user-facing behavior (CLI commands/flags, env vars, artifact layout, API endpoints, UI behavior) must include updates to relevant pages under `docs/` in the same PR.
+- `docs/` is user-facing only; do not add internal implementation notes or iteration logs there.

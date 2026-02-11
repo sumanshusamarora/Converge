@@ -115,3 +115,9 @@ Stop immediately and request human judgment when:
 - Log errors with context but without sensitive data
 - Fail fast and clearly communicate what went wrong
 - Provide actionable next steps or questions for HITL
+
+## Documentation Sync Requirement
+
+Any change that affects user-facing behavior (CLI flags/commands, environment variables, artifact layout, API endpoints, or UI behavior) **must** include matching updates in `docs/` in the same change set.
+
+`docs/` is user-facing only: do not place internal implementation notes or iteration logs there.
