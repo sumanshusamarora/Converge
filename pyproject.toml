@@ -34,6 +34,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "pymdown-extensions",
+]
+
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -67,7 +73,7 @@ select = [
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ARG"]
+"tests/**/*.py" = ["ARG", "SIM117"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -83,6 +89,7 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 ignore_missing_imports = true
+files = ["src"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"

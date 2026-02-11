@@ -129,9 +129,7 @@ def create_branch(repo_path: Path, branch_name: str) -> None:
         raise GitError(f"Failed to create branch: {e}") from e
 
 
-def commit_all(
-    repo_path: Path, message: str, author_name: str, author_email: str
-) -> None:
+def commit_all(repo_path: Path, message: str, author_name: str, author_email: str) -> None:
     """Stage all changes and create a commit.
 
     Args:
@@ -283,7 +281,7 @@ def get_diff_numstat(repo_path: Path) -> list[tuple[str, int, int]]:
         if result.returncode != 0:
             raise GitError(f"git diff --numstat failed: {result.stderr}")
 
-        stats = []
+        stats: list[tuple[str, int, int]] = []
         stdout = result.stdout.strip()
         if not stdout:
             return stats

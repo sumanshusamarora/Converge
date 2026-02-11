@@ -113,9 +113,9 @@ function ArtifactsViewer({ task }: { task: TaskRecord }) {
   }
 
   const runId = task.artifacts_dir.split('/').pop() || task.artifacts_dir;
-  const repoPlanFiles = files.filter(f => f.path.startsWith('repo-plans/') && f.path.endsWith('.plan.md'));
-  const promptFiles = files.filter(f => f.path.startsWith('prompts/') && f.path.endsWith('.copilot.md'));
-  const commandFiles = files.filter(f => f.path.startsWith('commands/') && f.path.endsWith('.commands.txt'));
+  const repoPlanFiles = files.filter(f => f.path.startsWith('repo-plans/') && f.path.endsWith('plan.md'));
+  const promptFiles = files.filter(f => f.path.startsWith('prompts/') && f.path.endsWith('copilot-prompt.txt'));
+  const commandFiles = files.filter(f => f.path.startsWith('commands/') && f.path.endsWith('commands.sh'));
 
   return (
     <div className="bg-white shadow rounded-lg p-6 mb-4">

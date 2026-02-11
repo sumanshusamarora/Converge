@@ -1,0 +1,19 @@
+site_name: Converge
+site_description: User documentation for Converge
+repo_name: Converge
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - CLI: cli.md
+  - Configuration: configuration.md
+  - Tasks & HITL: tasks-and-hitl.md
+  - Providers & Execution: providers-and-execution.md
+  - UI: ui.md
+  - Troubleshooting: troubleshooting.md
+theme:
+  name: material
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - pymdownx.details
