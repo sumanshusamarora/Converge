@@ -28,6 +28,8 @@ from converge.execution.git_utils import (
     current_branch,
     ensure_git_repo,
     get_changed_files,
+    get_diff_bytes,
+    get_diff_line_counts,
     get_diff_stat,
     is_working_tree_clean,
 )
@@ -46,6 +48,10 @@ class ExecResult:
         logs: Dictionary mapping log type to file path
         changed_files: List of files modified during execution
         diff_stat: Summary of changes made
+        diff_added: Number of lines added
+        diff_deleted: Number of lines deleted
+        diff_bytes: Approximate size of diff in bytes
+        threshold_exceeded: Whether safety thresholds were exceeded
     """
 
     ok: bool
@@ -54,6 +60,10 @@ class ExecResult:
     logs: dict[str, str] = field(default_factory=dict)
     changed_files: list[str] = field(default_factory=list)
     diff_stat: str = ""
+    diff_added: int = 0
+    diff_deleted: int = 0
+    diff_bytes: int = 0
+    threshold_exceeded: bool = False
 
 
 class CodexApplyExecutor:
@@ -67,15 +77,24 @@ class CodexApplyExecutor:
         self,
         allowlisted_commands: list[str] | None = None,
         codex_path: str = "codex",
+        max_changed_files: int | None = None,
+        max_diff_lines: int | None = None,
+        max_diff_bytes: int | None = None,
     ):
         """Initialize the Codex apply executor.
 
         Args:
             allowlisted_commands: List of allowed command prefixes for verification
             codex_path: Path to the Codex CLI executable
+            max_changed_files: Maximum number of files that can be changed (None = no limit)
+            max_diff_lines: Maximum total lines (added+deleted) allowed (None = no limit)
+            max_diff_bytes: Maximum diff size in bytes (None = no limit)
         """
         self.allowlisted_commands = allowlisted_commands or []
         self.codex_path = codex_path
+        self.max_changed_files = max_changed_files
+        self.max_diff_lines = max_diff_lines
+        self.max_diff_bytes = max_diff_bytes
 
     def check_codex_available(self) -> bool:
         """Check if Codex CLI is available on the system.
@@ -363,13 +382,65 @@ class CodexApplyExecutor:
         try:
             changed_files = get_changed_files(repo_path)
             diff_stat = get_diff_stat(repo_path)
+            diff_added, diff_deleted = get_diff_line_counts(repo_path)
+            diff_bytes = get_diff_bytes(repo_path)
         except GitError as e:
             logger.warning("Failed to get change info: %s", e)
             changed_files = []
             diff_stat = "Unable to retrieve diff stats"
+            diff_added = 0
+            diff_deleted = 0
+            diff_bytes = 0
 
         # =================================================================
-        # STEP 5: Commit changes if configured
+        # STEP 5: Check safety thresholds
+        # =================================================================
+        threshold_exceeded = False
+        threshold_messages = []
+
+        # Check max changed files
+        if self.max_changed_files is not None and len(changed_files) > self.max_changed_files:
+            threshold_exceeded = True
+            threshold_messages.append(
+                f"Changed files: {len(changed_files)} exceeds limit of {self.max_changed_files}"
+            )
+
+        # Check max diff lines (added + deleted)
+        total_lines = diff_added + diff_deleted
+        if self.max_diff_lines is not None and total_lines > self.max_diff_lines:
+            threshold_exceeded = True
+            threshold_messages.append(
+                f"Total diff lines: {total_lines} exceeds limit of {self.max_diff_lines}"
+            )
+
+        # Check max diff bytes
+        if self.max_diff_bytes is not None and diff_bytes > self.max_diff_bytes:
+            threshold_exceeded = True
+            threshold_messages.append(
+                f"Diff size: {diff_bytes} bytes exceeds limit of {self.max_diff_bytes}"
+            )
+
+        if threshold_exceeded:
+            logger.warning("Safety thresholds exceeded: %s", "; ".join(threshold_messages))
+            return ExecResult(
+                ok=True,  # Not a failure, but HITL required
+                exit_code=0,
+                message=(
+                    f"HITL_REQUIRED: Safety thresholds exceeded. "
+                    f"{'; '.join(threshold_messages)}. "
+                    f"Review changes in logs/diff before committing."
+                ),
+                logs=logs,
+                changed_files=changed_files,
+                diff_stat=diff_stat,
+                diff_added=diff_added,
+                diff_deleted=diff_deleted,
+                diff_bytes=diff_bytes,
+                threshold_exceeded=True,
+            )
+
+        # =================================================================
+        # STEP 6: Commit changes if configured and thresholds not exceeded
         # =================================================================
         if git_commit and changed_files:
             try:
@@ -386,6 +457,9 @@ class CodexApplyExecutor:
                     logs=logs,
                     changed_files=changed_files,
                     diff_stat=diff_stat,
+                    diff_added=diff_added,
+                    diff_deleted=diff_deleted,
+                    diff_bytes=diff_bytes,
                 )
 
         # =================================================================
@@ -399,4 +473,8 @@ class CodexApplyExecutor:
             logs=logs,
             changed_files=changed_files,
             diff_stat=diff_stat,
+            diff_added=diff_added,
+            diff_deleted=diff_deleted,
+            diff_bytes=diff_bytes,
+            threshold_exceeded=False,
         )

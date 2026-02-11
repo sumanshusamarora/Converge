@@ -13,6 +13,9 @@ from converge.execution.git_utils import (
     current_branch,
     ensure_git_repo,
     get_changed_files,
+    get_diff_bytes,
+    get_diff_line_counts,
+    get_diff_numstat,
     get_diff_stat,
     is_working_tree_clean,
 )
@@ -331,3 +334,130 @@ def test_get_diff_stat_timeout(tmp_path: Path) -> None:
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git", 10)):
         with pytest.raises(GitError, match="timed out"):
             get_diff_stat(tmp_path)
+
+
+def test_get_diff_numstat_success(tmp_path: Path) -> None:
+    """Test get_diff_numstat returns per-file statistics."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    mock_result.stdout = "10\t5\tfile1.txt\n3\t7\tdir/file2.py\n"
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        stats = get_diff_numstat(tmp_path)
+
+    assert stats == [("file1.txt", 10, 5), ("dir/file2.py", 3, 7)]
+    mock_run.assert_called_once()
+    call_args = mock_run.call_args
+    assert call_args[0][0] == ["git", "diff", "--numstat", "HEAD"]
+
+
+def test_get_diff_numstat_binary_files(tmp_path: Path) -> None:
+    """Test get_diff_numstat handles binary files (marked with -)."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    # Binary files are marked with '-' for added/deleted
+    mock_result.stdout = "10\t5\tfile1.txt\n-\t-\timage.png\n"
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        stats = get_diff_numstat(tmp_path)
+
+    # Binary files should have 0 for both added and deleted
+    assert stats == [("file1.txt", 10, 5), ("image.png", 0, 0)]
+
+
+def test_get_diff_numstat_empty(tmp_path: Path) -> None:
+    """Test get_diff_numstat returns empty list when no changes."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    mock_result.stdout = ""
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        stats = get_diff_numstat(tmp_path)
+
+    assert stats == []
+
+
+def test_get_diff_numstat_git_error(tmp_path: Path) -> None:
+    """Test get_diff_numstat raises GitError when git command fails."""
+    mock_result = Mock()
+    mock_result.returncode = 1
+    mock_result.stderr = "fatal: not a git repository"
+
+    with patch("subprocess.run", return_value=mock_result):
+        with pytest.raises(GitError, match="git diff --numstat failed"):
+            get_diff_numstat(tmp_path)
+
+
+def test_get_diff_line_counts_success(tmp_path: Path) -> None:
+    """Test get_diff_line_counts returns total added and deleted lines."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    mock_result.stdout = "10\t5\tfile1.txt\n3\t7\tfile2.py\n"
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        added, deleted = get_diff_line_counts(tmp_path)
+
+    # 10+3=13 added, 5+7=12 deleted
+    assert added == 13
+    assert deleted == 12
+
+
+def test_get_diff_line_counts_no_changes(tmp_path: Path) -> None:
+    """Test get_diff_line_counts returns (0, 0) when no changes."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    mock_result.stdout = ""
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        added, deleted = get_diff_line_counts(tmp_path)
+
+    assert added == 0
+    assert deleted == 0
+
+
+def test_get_diff_bytes_success(tmp_path: Path) -> None:
+    """Test get_diff_bytes returns approximate diff size."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    # Sample diff output
+    mock_result.stdout = "diff --git a/file.txt b/file.txt\n+new line\n-old line\n"
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result) as mock_run:
+        size = get_diff_bytes(tmp_path)
+
+    # Size should match the byte length of the diff output
+    expected_size = len(mock_result.stdout.encode("utf-8"))
+    assert size == expected_size
+    mock_run.assert_called_once()
+    call_args = mock_run.call_args
+    assert call_args[0][0] == ["git", "diff", "HEAD"]
+
+
+def test_get_diff_bytes_no_changes(tmp_path: Path) -> None:
+    """Test get_diff_bytes returns 0 when no changes."""
+    mock_result = Mock()
+    mock_result.returncode = 0
+    mock_result.stdout = ""
+    mock_result.stderr = ""
+
+    with patch("subprocess.run", return_value=mock_result):
+        size = get_diff_bytes(tmp_path)
+
+    assert size == 0
+
+
+def test_get_diff_bytes_git_error(tmp_path: Path) -> None:
+    """Test get_diff_bytes raises GitError when git command fails."""
+    mock_result = Mock()
+    mock_result.returncode = 1
+    mock_result.stderr = "fatal: not a git repository"
+
+    with patch("subprocess.run", return_value=mock_result):
+        with pytest.raises(GitError, match="git diff failed"):
+            get_diff_bytes(tmp_path)

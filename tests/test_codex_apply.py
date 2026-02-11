@@ -380,6 +380,14 @@ def test_apply_codex_execution_success(
             "converge.execution.codex_apply.get_diff_stat",
             return_value="1 file changed, 5 insertions(+), 2 deletions(-)",
         ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(5, 2),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=256,
+        ),
     ):
         result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
 
@@ -387,6 +395,10 @@ def test_apply_codex_execution_success(
     assert result.exit_code == 0
     assert "successfully" in result.message.lower()
     assert result.changed_files == ["main.py"]
+    assert result.diff_added == 5
+    assert result.diff_deleted == 2
+    assert result.diff_bytes == 256
+    assert result.threshold_exceeded is False
     assert "codex_stdout" in result.logs
     assert "codex_stderr" in result.logs
 
@@ -492,6 +504,14 @@ def test_apply_commits_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "converge.execution.codex_apply.get_diff_stat",
             return_value="1 file changed, 3 insertions(+)",
         ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(3, 0),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=128,
+        ),
         patch("converge.execution.codex_apply.commit_all") as mock_commit,
     ):
         result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
@@ -536,6 +556,14 @@ def test_apply_skips_commit_when_no_changes(
         patch(
             "converge.execution.codex_apply.get_diff_stat", return_value="No changes"
         ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(0, 0),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=0,
+        ),
         patch("converge.execution.codex_apply.commit_all") as mock_commit,
     ):
         result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
@@ -577,6 +605,14 @@ def test_apply_runs_verification_commands(
         patch("converge.execution.codex_apply.get_changed_files", return_value=[]),
         patch(
             "converge.execution.codex_apply.get_diff_stat", return_value="No changes"
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(0, 0),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=0,
         ),
     ):
         result = executor.apply(
@@ -626,6 +662,14 @@ def test_apply_skips_non_allowlisted_verification(
         patch(
             "converge.execution.codex_apply.get_diff_stat", return_value="No changes"
         ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(0, 0),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=0,
+        ),
     ):
         result = executor.apply(
             repo_path,
@@ -670,9 +714,242 @@ def test_apply_interactive_mode(
         patch(
             "converge.execution.codex_apply.get_diff_stat", return_value="No changes"
         ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(0, 0),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=0,
+        ),
     ):
         result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
 
     # Should succeed with interactive mode
     assert result.ok is True
     assert result.exit_code == 0
+
+
+def test_apply_threshold_max_changed_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test threshold enforcement for max changed files."""
+    monkeypatch.setenv("CONVERGE_EXECUTION_MODE", "headless")
+    monkeypatch.setenv("CONVERGE_CODEX_APPLY", "true")
+    monkeypatch.setenv("CONVERGE_CREATE_BRANCH", "false")
+    monkeypatch.setenv("CONVERGE_GIT_COMMIT", "true")
+
+    executor = CodexApplyExecutor(max_changed_files=2)
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / ".git").mkdir()
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Test instruction")
+    artifacts_dir = tmp_path / "artifacts"
+
+    mock_process = Mock()
+    mock_process.returncode = 0
+
+    with (
+        patch(
+            "converge.execution.codex_apply.is_working_tree_clean", return_value=True
+        ),
+        patch("shutil.which", return_value="/usr/bin/codex"),
+        patch("subprocess.run", return_value=mock_process),
+        patch(
+            "converge.execution.codex_apply.get_changed_files",
+            return_value=["file1.txt", "file2.py", "file3.js"],
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_stat",
+            return_value="3 files changed",
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(10, 5),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=500,
+        ),
+        patch("converge.execution.codex_apply.commit_all") as mock_commit,
+    ):
+        result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
+
+    # Should succeed but mark as HITL_REQUIRED
+    assert result.ok is True
+    assert result.exit_code == 0
+    assert result.threshold_exceeded is True
+    assert "HITL_REQUIRED" in result.message
+    assert "3 exceeds limit of 2" in result.message
+    # Commit should NOT have been called
+    mock_commit.assert_not_called()
+
+
+def test_apply_threshold_max_diff_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test threshold enforcement for max diff lines."""
+    monkeypatch.setenv("CONVERGE_EXECUTION_MODE", "headless")
+    monkeypatch.setenv("CONVERGE_CODEX_APPLY", "true")
+    monkeypatch.setenv("CONVERGE_CREATE_BRANCH", "false")
+    monkeypatch.setenv("CONVERGE_GIT_COMMIT", "true")
+
+    executor = CodexApplyExecutor(max_diff_lines=100)
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / ".git").mkdir()
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Test instruction")
+    artifacts_dir = tmp_path / "artifacts"
+
+    mock_process = Mock()
+    mock_process.returncode = 0
+
+    with (
+        patch(
+            "converge.execution.codex_apply.is_working_tree_clean", return_value=True
+        ),
+        patch("shutil.which", return_value="/usr/bin/codex"),
+        patch("subprocess.run", return_value=mock_process),
+        patch(
+            "converge.execution.codex_apply.get_changed_files",
+            return_value=["file1.txt"],
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_stat",
+            return_value="1 file changed, 80 insertions(+), 50 deletions(-)",
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(80, 50),  # Total: 80 + 50 = 130 > 100
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=5000,
+        ),
+        patch("converge.execution.codex_apply.commit_all") as mock_commit,
+    ):
+        result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
+
+    # Should succeed but mark as HITL_REQUIRED
+    assert result.ok is True
+    assert result.exit_code == 0
+    assert result.threshold_exceeded is True
+    assert "HITL_REQUIRED" in result.message
+    assert "130 exceeds limit of 100" in result.message
+    # Commit should NOT have been called
+    mock_commit.assert_not_called()
+
+
+def test_apply_threshold_max_diff_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test threshold enforcement for max diff bytes."""
+    monkeypatch.setenv("CONVERGE_EXECUTION_MODE", "headless")
+    monkeypatch.setenv("CONVERGE_CODEX_APPLY", "true")
+    monkeypatch.setenv("CONVERGE_CREATE_BRANCH", "false")
+    monkeypatch.setenv("CONVERGE_GIT_COMMIT", "true")
+
+    executor = CodexApplyExecutor(max_diff_bytes=1000)
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / ".git").mkdir()
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Test instruction")
+    artifacts_dir = tmp_path / "artifacts"
+
+    mock_process = Mock()
+    mock_process.returncode = 0
+
+    with (
+        patch(
+            "converge.execution.codex_apply.is_working_tree_clean", return_value=True
+        ),
+        patch("shutil.which", return_value="/usr/bin/codex"),
+        patch("subprocess.run", return_value=mock_process),
+        patch(
+            "converge.execution.codex_apply.get_changed_files",
+            return_value=["file1.txt"],
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_stat",
+            return_value="1 file changed",
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(10, 5),
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=2000,  # > 1000
+        ),
+        patch("converge.execution.codex_apply.commit_all") as mock_commit,
+    ):
+        result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
+
+    # Should succeed but mark as HITL_REQUIRED
+    assert result.ok is True
+    assert result.exit_code == 0
+    assert result.threshold_exceeded is True
+    assert "HITL_REQUIRED" in result.message
+    assert "2000 bytes exceeds limit of 1000" in result.message
+    # Commit should NOT have been called
+    mock_commit.assert_not_called()
+
+
+def test_apply_within_thresholds_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test that changes within thresholds are committed normally."""
+    monkeypatch.setenv("CONVERGE_EXECUTION_MODE", "headless")
+    monkeypatch.setenv("CONVERGE_CODEX_APPLY", "true")
+    monkeypatch.setenv("CONVERGE_CREATE_BRANCH", "false")
+    monkeypatch.setenv("CONVERGE_GIT_COMMIT", "true")
+
+    executor = CodexApplyExecutor(
+        max_changed_files=10, max_diff_lines=100, max_diff_bytes=5000
+    )
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / ".git").mkdir()
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Test instruction")
+    artifacts_dir = tmp_path / "artifacts"
+
+    mock_process = Mock()
+    mock_process.returncode = 0
+
+    with (
+        patch(
+            "converge.execution.codex_apply.is_working_tree_clean", return_value=True
+        ),
+        patch("shutil.which", return_value="/usr/bin/codex"),
+        patch("subprocess.run", return_value=mock_process),
+        patch(
+            "converge.execution.codex_apply.get_changed_files",
+            return_value=["file1.txt", "file2.py"],  # 2 < 10
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_stat",
+            return_value="2 files changed, 30 insertions(+), 10 deletions(-)",
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_line_counts",
+            return_value=(30, 10),  # Total 40 < 100
+        ),
+        patch(
+            "converge.execution.codex_apply.get_diff_bytes",
+            return_value=1500,  # < 5000
+        ),
+        patch("converge.execution.codex_apply.commit_all") as mock_commit,
+    ):
+        result = executor.apply(repo_path, prompt_path, artifacts_dir, "converge/test")
+
+    # Should succeed and commit
+    assert result.ok is True
+    assert result.exit_code == 0
+    assert result.threshold_exceeded is False
+    assert "HITL_REQUIRED" not in result.message
+    # Commit SHOULD have been called
+    mock_commit.assert_called_once()

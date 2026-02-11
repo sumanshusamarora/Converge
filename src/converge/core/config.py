@@ -148,6 +148,19 @@ class ExecutionSettings(BaseModel):
     create_branch: bool
 
 
+class CodexApplySettings(BaseModel):
+    """Settings for Codex apply executor with safety thresholds."""
+
+    enabled: bool
+    allow_dirty: bool
+    git_commit: bool
+    git_author_name: str
+    git_author_email: str
+    max_changed_files: int | None
+    max_diff_lines: int | None
+    max_diff_bytes: int | None
+
+
 def load_execution_settings() -> ExecutionSettings:
     """Load execution mode settings from environment with validation.
 
@@ -189,4 +202,72 @@ def load_execution_settings() -> ExecutionSettings:
         allowlisted_cmds=allowlisted_cmds,
         require_git_clean=require_git_clean,
         create_branch=create_branch,
+    )
+
+
+def load_codex_apply_settings() -> CodexApplySettings:
+    """Load Codex apply executor settings from environment with validation.
+
+    Returns:
+        CodexApplySettings with parsed configuration values
+    """
+    enabled = os.getenv("CONVERGE_CODEX_APPLY", "false").strip().lower() == "true"
+    allow_dirty = os.getenv("CONVERGE_ALLOW_DIRTY", "false").strip().lower() == "true"
+    git_commit = os.getenv("CONVERGE_GIT_COMMIT", "true").strip().lower() == "true"
+    git_author_name = os.getenv("CONVERGE_GIT_AUTHOR_NAME", "Converge Bot")
+    git_author_email = os.getenv("CONVERGE_GIT_AUTHOR_EMAIL", "converge-bot@example.com")
+
+    # Parse threshold settings (None means no limit)
+    max_changed_files = None
+    max_changed_files_str = os.getenv("CONVERGE_MAX_CHANGED_FILES", "")
+    if max_changed_files_str.strip():
+        try:
+            max_changed_files = int(max_changed_files_str)
+            if max_changed_files <= 0:
+                logger.warning("CONVERGE_MAX_CHANGED_FILES must be > 0, ignoring")
+                max_changed_files = None
+        except ValueError:
+            logger.warning("Invalid CONVERGE_MAX_CHANGED_FILES, ignoring")
+
+    max_diff_lines = None
+    max_diff_lines_str = os.getenv("CONVERGE_MAX_DIFF_LINES", "")
+    if max_diff_lines_str.strip():
+        try:
+            max_diff_lines = int(max_diff_lines_str)
+            if max_diff_lines <= 0:
+                logger.warning("CONVERGE_MAX_DIFF_LINES must be > 0, ignoring")
+                max_diff_lines = None
+        except ValueError:
+            logger.warning("Invalid CONVERGE_MAX_DIFF_LINES, ignoring")
+
+    max_diff_bytes = None
+    max_diff_bytes_str = os.getenv("CONVERGE_MAX_DIFF_BYTES", "")
+    if max_diff_bytes_str.strip():
+        try:
+            max_diff_bytes = int(max_diff_bytes_str)
+            if max_diff_bytes <= 0:
+                logger.warning("CONVERGE_MAX_DIFF_BYTES must be > 0, ignoring")
+                max_diff_bytes = None
+        except ValueError:
+            logger.warning("Invalid CONVERGE_MAX_DIFF_BYTES, ignoring")
+
+    logger.info(
+        "Codex apply settings loaded: enabled=%s, git_commit=%s, "
+        "max_changed_files=%s, max_diff_lines=%s, max_diff_bytes=%s",
+        enabled,
+        git_commit,
+        max_changed_files,
+        max_diff_lines,
+        max_diff_bytes,
+    )
+
+    return CodexApplySettings(
+        enabled=enabled,
+        allow_dirty=allow_dirty,
+        git_commit=git_commit,
+        git_author_name=git_author_name,
+        git_author_email=git_author_email,
+        max_changed_files=max_changed_files,
+        max_diff_lines=max_diff_lines,
+        max_diff_bytes=max_diff_bytes,
     )

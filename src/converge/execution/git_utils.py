@@ -257,3 +257,113 @@ def get_diff_stat(repo_path: Path) -> str:
         raise GitError(f"git diff --stat timed out: {e}") from e
     except Exception as e:
         raise GitError(f"Failed to get diff stat: {e}") from e
+
+
+def get_diff_numstat(repo_path: Path) -> list[tuple[str, int, int]]:
+    """Get per-file diff statistics (numstat format).
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        List of tuples (filename, added_lines, deleted_lines)
+
+    Raises:
+        GitError: If git command fails
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--numstat", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            raise GitError(f"git diff --numstat failed: {result.stderr}")
+
+        stats = []
+        stdout = result.stdout.strip()
+        if not stdout:
+            return stats
+
+        for line in stdout.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 3:
+                added = parts[0]
+                deleted = parts[1]
+                filename = parts[2]
+                # Handle binary files (marked with '-')
+                added_int = 0 if added == "-" else int(added)
+                deleted_int = 0 if deleted == "-" else int(deleted)
+                stats.append((filename, added_int, deleted_int))
+
+        return stats
+
+    except subprocess.TimeoutExpired as e:
+        raise GitError(f"git diff --numstat timed out: {e}") from e
+    except (ValueError, IndexError) as e:
+        raise GitError(f"Failed to parse numstat output: {e}") from e
+    except Exception as e:
+        raise GitError(f"Failed to get diff numstat: {e}") from e
+
+
+def get_diff_line_counts(repo_path: Path) -> tuple[int, int]:
+    """Get total line counts from diff (added, deleted).
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        Tuple of (added_lines, deleted_lines)
+
+    Raises:
+        GitError: If git command fails
+    """
+    try:
+        stats = get_diff_numstat(repo_path)
+        added = sum(s[1] for s in stats)
+        deleted = sum(s[2] for s in stats)
+        return (added, deleted)
+
+    except GitError:
+        raise
+    except Exception as e:
+        raise GitError(f"Failed to get diff line counts: {e}") from e
+
+
+def get_diff_bytes(repo_path: Path) -> int:
+    """Get approximate size of diff in bytes.
+
+    Args:
+        repo_path: Path to the git repository
+
+    Returns:
+        Approximate diff size in bytes
+
+    Raises:
+        GitError: If git command fails
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            raise GitError(f"git diff failed: {result.stderr}")
+
+        # Return byte length of diff output
+        return len(result.stdout.encode("utf-8"))
+
+    except subprocess.TimeoutExpired as e:
+        raise GitError(f"git diff timed out: {e}") from e
+    except Exception as e:
+        raise GitError(f"Failed to get diff bytes: {e}") from e

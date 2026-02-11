@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from converge.core.config import (
     ConvergeConfig,
+    load_codex_apply_settings,
     load_queue_settings,
     load_server_settings,
 )
@@ -89,3 +90,65 @@ def test_load_server_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.webhook_secret is None
     assert settings.webhook_max_body_bytes == 262144
     assert settings.webhook_idempotency_ttl_seconds == 86400
+
+
+def test_load_codex_apply_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test load_codex_apply_settings with default values."""
+    monkeypatch.delenv("CONVERGE_CODEX_APPLY", raising=False)
+    monkeypatch.delenv("CONVERGE_ALLOW_DIRTY", raising=False)
+    monkeypatch.delenv("CONVERGE_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("CONVERGE_GIT_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("CONVERGE_GIT_AUTHOR_EMAIL", raising=False)
+    monkeypatch.delenv("CONVERGE_MAX_CHANGED_FILES", raising=False)
+    monkeypatch.delenv("CONVERGE_MAX_DIFF_LINES", raising=False)
+    monkeypatch.delenv("CONVERGE_MAX_DIFF_BYTES", raising=False)
+
+    settings = load_codex_apply_settings()
+
+    assert settings.enabled is False
+    assert settings.allow_dirty is False
+    assert settings.git_commit is True
+    assert settings.git_author_name == "Converge Bot"
+    assert settings.git_author_email == "converge-bot@example.com"
+    assert settings.max_changed_files is None
+    assert settings.max_diff_lines is None
+    assert settings.max_diff_bytes is None
+
+
+def test_load_codex_apply_settings_custom(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test load_codex_apply_settings with custom values."""
+    monkeypatch.setenv("CONVERGE_CODEX_APPLY", "true")
+    monkeypatch.setenv("CONVERGE_ALLOW_DIRTY", "true")
+    monkeypatch.setenv("CONVERGE_GIT_COMMIT", "false")
+    monkeypatch.setenv("CONVERGE_GIT_AUTHOR_NAME", "Test Bot")
+    monkeypatch.setenv("CONVERGE_GIT_AUTHOR_EMAIL", "bot@test.com")
+    monkeypatch.setenv("CONVERGE_MAX_CHANGED_FILES", "25")
+    monkeypatch.setenv("CONVERGE_MAX_DIFF_LINES", "800")
+    monkeypatch.setenv("CONVERGE_MAX_DIFF_BYTES", "500000")
+
+    settings = load_codex_apply_settings()
+
+    assert settings.enabled is True
+    assert settings.allow_dirty is True
+    assert settings.git_commit is False
+    assert settings.git_author_name == "Test Bot"
+    assert settings.git_author_email == "bot@test.com"
+    assert settings.max_changed_files == 25
+    assert settings.max_diff_lines == 800
+    assert settings.max_diff_bytes == 500000
+
+
+def test_load_codex_apply_settings_invalid_thresholds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test load_codex_apply_settings handles invalid threshold values gracefully."""
+    monkeypatch.setenv("CONVERGE_MAX_CHANGED_FILES", "invalid")
+    monkeypatch.setenv("CONVERGE_MAX_DIFF_LINES", "-10")  # Negative value
+    monkeypatch.setenv("CONVERGE_MAX_DIFF_BYTES", "0")  # Zero value
+
+    settings = load_codex_apply_settings()
+
+    # Invalid values should be ignored and default to None
+    assert settings.max_changed_files is None
+    assert settings.max_diff_lines is None
+    assert settings.max_diff_bytes is None
