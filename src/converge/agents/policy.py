@@ -2,6 +2,9 @@
 
 This module defines the execution policy that controls when and how
 agents can execute commands, with safety checks and allowlists.
+
+DEPRECATED: This module has been moved to converge.execution.policy.
+Import from there instead. This wrapper is maintained for backward compatibility.
 """
 
 import os
@@ -9,9 +12,22 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+# Import from new location for backward compatibility
+from converge.execution.policy import (
+    get_default_allowlist as _get_default_allowlist,
+)
 
+
+# Re-export with old names for backward compatibility
 class ExecutionMode(str, Enum):
-    """Agent execution mode."""
+    """Agent execution mode.
+
+    DEPRECATED: Use converge.execution.policy.ExecutionMode instead.
+
+    Note: This enum maintains backward compatibility with the old
+    PLAN_ONLY and EXECUTE_ALLOWED values while the new module
+    uses PLAN_ONLY, EXECUTE_INTERACTIVE, and EXECUTE_HEADLESS.
+    """
 
     PLAN_ONLY = "plan_only"
     EXECUTE_ALLOWED = "execute_allowed"
@@ -20,6 +36,8 @@ class ExecutionMode(str, Enum):
 @dataclass
 class ExecutionPolicy:
     """Policy controlling agent execution capabilities.
+
+    DEPRECATED: Use converge.execution.policy.ExecutionPolicy instead.
 
     Attributes:
         mode: Whether execution is allowed or planning-only
@@ -54,27 +72,12 @@ class ExecutionPolicy:
 def get_default_allowlist() -> list[str]:
     """Return the default command allowlist.
 
+    DEPRECATED: Use converge.execution.policy.get_default_allowlist instead.
+
     Returns:
         List of allowed command prefixes
     """
-    return [
-        "pytest",
-        "ruff",
-        "black",
-        "mypy",
-        "npm",
-        "pnpm",
-        "yarn",
-        "python",
-        "pip",
-        "git",
-        "cat",
-        "ls",
-        "find",
-        "grep",
-        "mkdir",
-        "touch",
-    ]
+    return _get_default_allowlist()
 
 
 def policy_from_env_and_request(
@@ -83,6 +86,8 @@ def policy_from_env_and_request(
     cli_flags: dict[str, Any] | None = None,
 ) -> ExecutionPolicy:
     """Create an ExecutionPolicy from environment, task metadata, and CLI flags.
+
+    DEPRECATED: Use converge.execution.policy.policy_from_env_and_flags instead.
 
     Execution is allowed only when BOTH:
     - env CONVERGE_CODEX_ENABLED=true
