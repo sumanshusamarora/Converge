@@ -28,14 +28,23 @@ docker-compose up --build
 - API: http://localhost:8080
 - UI: http://localhost:3000
 
+## How Converge Works
+
+Converge runs tasks through a queue-and-worker lifecycle: submit a task, generate plans and artifacts, optionally execute when policy allows, and escalate to HITL when human decisions are needed. This keeps automation bounded while preserving clear audit trails for every run.
+
+See [How Converge Runs](docs/how-converge-runs.md) for a complete explanation.
+
+
 ## Documentation
 
 - [Overview](docs/index.md)
 - [Getting Started](docs/getting-started.md)
 - [CLI Reference](docs/cli.md)
+- [How Converge Runs](docs/how-converge-runs.md)
 - [Configuration](docs/configuration.md)
 - [Tasks and HITL](docs/tasks-and-hitl.md)
 - [Providers and Execution](docs/providers-and-execution.md)
+- [Execution & Modes Explained](docs/execution-and-modes.md)
 - [UI](docs/ui.md)
 - [Troubleshooting](docs/troubleshooting.md)
 

@@ -4,11 +4,10 @@ repo_name: Converge
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - CLI: cli.md
   - Configuration: configuration.md
-  - Tasks & HITL: tasks-and-hitl.md
-  - Providers & Execution: providers-and-execution.md
-  - UI: ui.md
+  - CLI: cli.md
+  - Concepts:
+      - How Converge Runs: how-converge-runs.md
   - Troubleshooting: troubleshooting.md
 theme:
   name: material
