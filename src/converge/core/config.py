@@ -137,3 +137,56 @@ def load_server_settings() -> ServerSettings:
         webhook_max_body_bytes=webhook_max_body_bytes,
         webhook_idempotency_ttl_seconds=webhook_idempotency_ttl_seconds,
     )
+
+
+class ExecutionSettings(BaseModel):
+    """Execution mode settings loaded from environment variables."""
+
+    mode: str
+    allowlisted_cmds: list[str]
+    require_git_clean: bool
+    create_branch: bool
+
+
+def load_execution_settings() -> ExecutionSettings:
+    """Load execution mode settings from environment with validation.
+
+    This function reads execution mode configuration but does NOT log
+    sensitive values to avoid leaking secrets.
+    """
+    mode = os.getenv("CONVERGE_EXECUTION_MODE", "plan").strip().lower()
+
+    # Validate mode value
+    valid_modes = {"plan", "interactive", "headless"}
+    if mode not in valid_modes:
+        logger.warning("Invalid CONVERGE_EXECUTION_MODE=%s, defaulting to 'plan'", mode)
+        mode = "plan"
+
+    # Parse allowlisted commands
+    allowlist_str = os.getenv("CONVERGE_ALLOWLISTED_CMDS", "")
+    if allowlist_str.strip():
+        allowlisted_cmds = [cmd.strip() for cmd in allowlist_str.split(",") if cmd.strip()]
+    else:
+        # Default allowlist
+        allowlisted_cmds = ["pytest", "ruff", "npm", "pnpm", "yarn", "python", "pip", "git"]
+
+    # Parse git safety flags
+    require_git_clean_str = os.getenv("CONVERGE_REQUIRE_GIT_CLEAN", "true").strip().lower()
+    require_git_clean = require_git_clean_str == "true"
+
+    create_branch_str = os.getenv("CONVERGE_CREATE_BRANCH", "true").strip().lower()
+    create_branch = create_branch_str == "true"
+
+    logger.info(
+        "Execution settings loaded: mode=%s, require_git_clean=%s, create_branch=%s",
+        mode,
+        require_git_clean,
+        create_branch,
+    )
+
+    return ExecutionSettings(
+        mode=mode,
+        allowlisted_cmds=allowlisted_cmds,
+        require_git_clean=require_git_clean,
+        create_branch=create_branch,
+    )

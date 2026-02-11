@@ -128,9 +128,8 @@ def create_app() -> FastAPI:
     @app.post("/api/tasks/{task_id}/resolve")
     def resolve_task(task_id: str, resolution: dict[str, Any]) -> dict[str, str]:
         """Resolve a HITL task by setting resolution and changing status to PENDING."""
-        import json
         try:
-            if not hasattr(queue, 'resolve_hitl'):
+            if not hasattr(queue, "resolve_hitl"):
                 raise HTTPException(status_code=501, detail="resolve_hitl not implemented")
             queue.resolve_hitl(task_id, resolution)
             return {"status": "ok", "message": f"Task {task_id} resolved and requeued"}
@@ -141,7 +140,7 @@ def create_app() -> FastAPI:
     def cancel_task(task_id: str) -> dict[str, str]:
         """Cancel a task."""
         try:
-            if not hasattr(queue, 'cancel'):
+            if not hasattr(queue, "cancel"):
                 raise HTTPException(status_code=501, detail="cancel not implemented")
             queue.cancel(task_id)
             return {"status": "ok", "message": f"Task {task_id} cancelled"}
@@ -162,10 +161,12 @@ def create_app() -> FastAPI:
         for item in run_path.rglob("*"):
             if item.is_file():
                 rel_path = item.relative_to(run_path)
-                files.append({
-                    "path": str(rel_path),
-                    "size": item.stat().st_size,
-                })
+                files.append(
+                    {
+                        "path": str(rel_path),
+                        "size": item.stat().st_size,
+                    }
+                )
 
         return {"run_id": run_id, "files": files}
 
