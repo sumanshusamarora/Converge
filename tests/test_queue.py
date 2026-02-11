@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -102,9 +103,32 @@ def test_postgres_uri_is_supported_by_backend_path(
     monkeypatch.setenv("CONVERGE_WORKER_MAX_ATTEMPTS", "3")
 
     with pytest.raises(Exception) as exc_info:  # noqa: BLE001
-        DatabaseTaskQueue("postgresql://user:pass@localhost:5432/converge")
+        DatabaseTaskQueue("postgresql+psycopg://user:pass@localhost:5432/converge")
 
     assert "Only sqlite" not in str(exc_info.value)
+
+
+def test_postgres_schema_extension_uses_advisory_lock() -> None:
+    """Postgres schema extension should serialize startup DDL with an advisory lock."""
+    queue = DatabaseTaskQueue.__new__(DatabaseTaskQueue)
+    queue._dialect_name = "postgresql"
+    conn = MagicMock()
+
+    queue._acquire_schema_lock(conn)
+
+    assert conn.execute.call_count == 1
+    assert "pg_advisory_xact_lock" in str(conn.execute.call_args.args[0])
+
+
+def test_non_postgres_schema_extension_skips_advisory_lock() -> None:
+    """SQLite and other backends should not run Postgres-specific lock SQL."""
+    queue = DatabaseTaskQueue.__new__(DatabaseTaskQueue)
+    queue._dialect_name = "sqlite"
+    conn = MagicMock()
+
+    queue._acquire_schema_lock(conn)
+
+    conn.execute.assert_not_called()
 
 
 def test_hitl_lifecycle_persist_and_resolve(

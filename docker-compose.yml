@@ -1,18 +1,14 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18.1-alpine3.23
     environment:
       POSTGRES_USER: converge
       POSTGRES_PASSWORD: converge
       POSTGRES_DB: converge
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
-      test: ["CMD-EXEC", "pg_isready -U converge"]
+      test: ["CMD-SHELL", "pg_isready -U converge"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,7 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      SQLALCHEMY_DATABASE_URI: "postgresql://converge:converge@postgres:5432/converge"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg://converge:converge@postgres:5432/converge"
       CONVERGE_QUEUE_BACKEND: "db"
       CONVERGE_OUTPUT_DIR: "/artifacts"
       CONVERGE_SERVER_HOST: "0.0.0.0"
@@ -32,7 +28,7 @@ services:
     volumes:
       - converge-artifacts:/artifacts
     ports:
-      - "8080:8080"
+      - "${CONVERGE_API_HOST_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,7 +39,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     environment:
-      SQLALCHEMY_DATABASE_URI: "postgresql://converge:converge@postgres:5432/converge"
+      SQLALCHEMY_DATABASE_URI: "postgresql+psycopg://converge:converge@postgres:5432/converge"
       CONVERGE_QUEUE_BACKEND: "db"
       CONVERGE_OUTPUT_DIR: "/artifacts"
       CONVERGE_WORKER_POLL_INTERVAL_SECONDS: "2"
@@ -63,9 +59,9 @@ services:
       context: ./src/frontend
       dockerfile: Dockerfile
     environment:
-      NEXT_PUBLIC_API_BASE_URL: "http://localhost:8080"
+      NEXT_PUBLIC_API_BASE_URL: "${NEXT_PUBLIC_API_BASE_URL:-http://localhost:${CONVERGE_API_HOST_PORT:-8080}}"
     ports:
-      - "3000:3000"
+      - "${CONVERGE_FRONTEND_HOST_PORT:-3000}:3000"
     depends_on:
       - converge-api
 

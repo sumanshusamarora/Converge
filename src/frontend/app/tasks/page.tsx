@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { fetchTasks, createTask, TaskRecord, TaskRequest } from '@/lib/api';
 
 function StatusBadge({ status }: { status: string }) {
-  const className = `badge badge-${status.toLowerCase()}`;
-  return <span className={className}>{status}</span>;
+  const className = `status-badge status-${status.toLowerCase().replace(/_/g, '-')}`;
+  return <span className={className}>{status.replace(/_/g, ' ')}</span>;
 }
 
 function TaskCreateForm({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
@@ -25,7 +25,10 @@ function TaskCreateForm({ onClose, onCreated }: { onClose: () => void; onCreated
     try {
       const request: TaskRequest = {
         goal,
-        repos: repos.split('\n').map(r => r.trim()).filter(r => r.length > 0),
+        repos: repos
+          .split('\n')
+          .map((repo) => repo.trim())
+          .filter((repo) => repo.length > 0),
         max_rounds: parseInt(maxRounds, 10),
         agent_provider: agentProvider || undefined,
       };
@@ -40,61 +43,55 @@ function TaskCreateForm({ onClose, onCreated }: { onClose: () => void; onCreated
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-    }}>
-      <div className="bg-white rounded-lg p-6 shadow" style={{ width: '600px', maxWidth: '90%' }}>
-        <h2 className="text-2xl font-bold mb-4">Create New Task</h2>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Create task">
+      <div className="modal-panel">
+        <div className="modal-head">
+          <h2 className="section-title">Create New Task</h2>
+          <p className="section-subtitle">
+            Define the objective, repositories, and execution bounds for this run.
+          </p>
+        </div>
         <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-bold mb-2">Goal</label>
+          <div className="field-block">
+            <label className="field-label">Goal</label>
             <textarea
-              className="w-full border rounded px-3 py-2"
+              className="field-input field-textarea"
               value={goal}
-              onChange={e => setGoal(e.target.value)}
+              onChange={(e) => setGoal(e.target.value)}
               required
               rows={3}
               placeholder="Enter task goal..."
             />
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-bold mb-2">Repositories (one per line)</label>
+          <div className="field-block">
+            <label className="field-label">Repositories (one per line)</label>
             <textarea
-              className="w-full border rounded px-3 py-2"
+              className="field-input field-textarea"
               value={repos}
-              onChange={e => setRepos(e.target.value)}
+              onChange={(e) => setRepos(e.target.value)}
               required
               rows={4}
               placeholder="repo1&#10;repo2&#10;repo3"
             />
           </div>
-          <div className="mb-4 grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="form-grid">
             <div>
-              <label className="block text-sm font-bold mb-2">Max Rounds</label>
+              <label className="field-label">Max Rounds</label>
               <input
                 type="number"
-                className="w-full border rounded px-3 py-2"
+                className="field-input"
                 value={maxRounds}
-                onChange={e => setMaxRounds(e.target.value)}
+                onChange={(e) => setMaxRounds(e.target.value)}
                 required
                 min="1"
               />
             </div>
             <div>
-              <label className="block text-sm font-bold mb-2">Agent Provider (optional)</label>
+              <label className="field-label">Agent Provider (optional)</label>
               <select
-                className="w-full border rounded px-3 py-2"
+                className="field-input"
                 value={agentProvider}
-                onChange={e => setAgentProvider(e.target.value)}
+                onChange={(e) => setAgentProvider(e.target.value)}
               >
                 <option value="">Default</option>
                 <option value="codex">Codex</option>
@@ -103,22 +100,20 @@ function TaskCreateForm({ onClose, onCreated }: { onClose: () => void; onCreated
             </div>
           </div>
           {error && (
-            <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-              {error}
-            </div>
+            <div className="error-callout small-callout">{error}</div>
           )}
-          <div className="flex" style={{ gap: '0.5rem', justifyContent: 'flex-end' }}>
+          <div className="modal-actions">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border rounded"
+              className="secondary-button"
               disabled={loading}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              className="primary-button"
               disabled={loading}
             >
               {loading ? 'Creating...' : 'Create Task'}
@@ -130,6 +125,16 @@ function TaskCreateForm({ onClose, onCreated }: { onClose: () => void; onCreated
   );
 }
 
+const STATUS_OPTIONS = [
+  'PENDING',
+  'CLAIMED',
+  'RUNNING',
+  'SUCCEEDED',
+  'FAILED',
+  'HITL_REQUIRED',
+  'CANCELLED',
+];
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState('');
@@ -137,7 +142,7 @@ export default function TasksPage() {
   const [error, setError] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -148,81 +153,131 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
     loadTasks();
-  }, [statusFilter]);
+  }, [loadTasks]);
+
+  const summary = useMemo(() => {
+    const counts = tasks.reduce<Record<string, number>>((acc, task) => {
+      const key = task.status;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const active =
+      (counts.PENDING || 0) + (counts.CLAIMED || 0) + (counts.RUNNING || 0) + (counts.HITL_REQUIRED || 0);
+
+    return {
+      total: tasks.length,
+      active,
+      succeeded: counts.SUCCEEDED || 0,
+      failed: counts.FAILED || 0,
+    };
+  }, [tasks]);
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Tasks</h1>
+    <div className="page-stack">
+      <section className="panel panel-hero">
+        <div>
+          <p className="eyebrow">Coordination</p>
+          <h1 className="page-title">Task Control Center</h1>
+          <p className="page-subtitle">
+            Launch, monitor, and resolve multi-repository workflows with high signal and clear status.
+          </p>
+        </div>
         <button
           onClick={() => setShowCreateForm(true)}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="primary-button"
         >
-          Create Task
+          New Task
         </button>
-      </div>
+      </section>
 
-      <div className="mb-4">
-        <label className="text-sm font-bold mr-2">Filter by Status:</label>
+      <section className="stats-grid stagger-list">
+        <article className="metric-card">
+          <span>Total</span>
+          <strong>{summary.total}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Active</span>
+          <strong>{summary.active}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Succeeded</span>
+          <strong>{summary.succeeded}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Failed</span>
+          <strong>{summary.failed}</strong>
+        </article>
+      </section>
+
+      <section className="panel panel-soft controls-bar">
+        <label className="field-label" htmlFor="status-filter">
+          Filter by Status
+        </label>
         <select
-          className="border rounded px-3 py-2"
+          id="status-filter"
+          className="field-input filter-select"
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
+          onChange={(e) => setStatusFilter(e.target.value)}
         >
           <option value="">All</option>
-          <option value="PENDING">PENDING</option>
-          <option value="CLAIMED">CLAIMED</option>
-          <option value="RUNNING">RUNNING</option>
-          <option value="SUCCEEDED">SUCCEEDED</option>
-          <option value="FAILED">FAILED</option>
-          <option value="HITL_REQUIRED">HITL_REQUIRED</option>
-          <option value="CANCELLED">CANCELLED</option>
+          {STATUS_OPTIONS.map((status) => (
+            <option key={status} value={status}>
+              {status}
+            </option>
+          ))}
         </select>
-      </div>
+        <button type="button" className="secondary-button" onClick={loadTasks}>
+          Refresh
+        </button>
+      </section>
 
-      {error && (
-        <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">
-          {error}
-        </div>
-      )}
+      {error && <div className="error-callout">{error}</div>}
 
       {loading ? (
-        <div className="text-gray-600">Loading tasks...</div>
+        <div className="panel callout">Loading tasks...</div>
       ) : tasks.length === 0 ? (
-        <div className="text-gray-600">No tasks found.</div>
+        <div className="panel callout">No tasks found for the selected filter.</div>
       ) : (
-        <div className="bg-white shadow rounded-lg">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Goal</th>
-                <th>Status</th>
-                <th>Attempts</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map(task => (
-                <tr key={task.id}>
-                  <td>
-                    <Link href={`/tasks/${task.id}`} style={{ color: '#3b82f6' }}>
-                      {task.id.substring(0, 8)}...
-                    </Link>
-                  </td>
-                  <td>{task.request.goal.substring(0, 60)}{task.request.goal.length > 60 ? '...' : ''}</td>
-                  <td><StatusBadge status={task.status} /></td>
-                  <td>{task.attempts}</td>
-                  <td>{new Date(task.created_at).toLocaleString()}</td>
+        <section className="panel table-panel">
+          <div className="table-wrap">
+            <table className="tasks-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Goal</th>
+                  <th>Status</th>
+                  <th>Attempts</th>
+                  <th>Created</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {tasks.map((task) => (
+                  <tr key={task.id} className="task-row">
+                    <td>
+                      <Link href={`/tasks/${task.id}`} className="task-link">
+                        {task.id.substring(0, 8)}...
+                      </Link>
+                    </td>
+                    <td className="goal-cell">
+                      {task.request.goal.substring(0, 80)}
+                      {task.request.goal.length > 80 ? '...' : ''}
+                    </td>
+                    <td>
+                      <StatusBadge status={task.status} />
+                    </td>
+                    <td>{task.attempts}</td>
+                    <td>{new Date(task.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {showCreateForm && (

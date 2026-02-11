@@ -55,7 +55,12 @@ docker-compose up --build
 Services:
 - API: `http://localhost:8080`
 - UI: `http://localhost:3000`
-- Postgres: `localhost:5432`
+- Postgres: internal-only by default (no host port mapping)
+
+Port overrides (optional):
+- `CONVERGE_API_HOST_PORT` (default `8080`)
+- `CONVERGE_FRONTEND_HOST_PORT` (default `3000`)
+- `NEXT_PUBLIC_API_BASE_URL` (default resolves to API host port)
 
 Verify:
 

@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { fetchTask, resolveTask, cancelTask, fetchRunFiles, fetchRunFile, TaskRecord, RunFile } from '@/lib/api';
 
 function StatusBadge({ status }: { status: string }) {
-  const className = `badge badge-${status.toLowerCase()}`;
-  return <span className={className}>{status}</span>;
+  const className = `status-badge status-${status.toLowerCase().replace(/_/g, '-')}`;
+  return <span className={className}>{status.replace(/_/g, ' ')}</span>;
 }
 
 function HITLResolutionForm({ task, onResolved }: { task: TaskRecord; onResolved: () => void }) {
@@ -32,37 +32,32 @@ function HITLResolutionForm({ task, onResolved }: { task: TaskRecord; onResolved
   };
 
   return (
-    <div className="bg-white shadow rounded-lg p-6 mb-4">
-      <h2 className="text-xl font-bold mb-4">Resolve HITL Task</h2>
+    <section className="panel">
+      <h2 className="section-title">Resolve HITL Task</h2>
+      <p className="section-subtitle">Submit a JSON object with your decision and any supporting notes.</p>
       <form onSubmit={handleSubmit}>
-        <div className="mb-4">
-          <label className="block text-sm font-bold mb-2">Resolution JSON</label>
+        <div className="field-block">
+          <label className="field-label">Resolution JSON</label>
           <textarea
-            className="w-full border rounded px-3 py-2"
+            className="field-input field-textarea"
             value={resolution}
-            onChange={e => setResolution(e.target.value)}
+            onChange={(e) => setResolution(e.target.value)}
             required
             rows={6}
             placeholder='{"answer": "yes", "details": "..."}'
           />
-          <p className="text-sm text-gray-600 mt-1">
-            Enter the resolution as a JSON object
-          </p>
+          <p className="helper-text">Enter the resolution as a valid JSON object.</p>
         </div>
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
-            {error}
-          </div>
-        )}
+        {error && <div className="error-callout small-callout">{error}</div>}
         <button
           type="submit"
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="primary-button"
           disabled={loading}
         >
           {loading ? 'Resolving...' : 'Submit Resolution'}
         </button>
       </form>
-    </div>
+    </section>
   );
 }
 
@@ -105,11 +100,11 @@ function ArtifactsViewer({ task }: { task: TaskRecord }) {
   }
 
   if (loading) {
-    return <div className="text-gray-600">Loading artifacts...</div>;
+    return <div className="panel callout">Loading artifacts...</div>;
   }
 
   if (error) {
-    return <div className="p-4 bg-red-100 text-red-700 rounded">{error}</div>;
+    return <div className="error-callout">{error}</div>;
   }
 
   const runId = task.artifacts_dir.split('/').pop() || task.artifacts_dir;
@@ -118,31 +113,32 @@ function ArtifactsViewer({ task }: { task: TaskRecord }) {
   const commandFiles = files.filter(f => f.path.startsWith('commands/') && f.path.endsWith('commands.sh'));
 
   return (
-    <div className="bg-white shadow rounded-lg p-6 mb-4">
-      <h2 className="text-xl font-bold mb-4">Latest Run Artifacts</h2>
+    <section className="panel">
+      <h2 className="section-title">Latest Run Artifacts</h2>
+      <p className="section-subtitle">Run ID: {runId}</p>
       
       {summary && (
-        <div className="mb-4">
-          <h3 className="font-bold mb-2">Summary</h3>
-          <pre className="text-sm">{summary}</pre>
+        <div className="artifact-block">
+          <h3 className="artifact-title">Summary</h3>
+          <pre className="artifact-preview">{summary}</pre>
         </div>
       )}
 
       {repoPlanFiles.length > 0 && (
-        <div className="mb-4">
-          <h3 className="font-bold mb-2">Repository Plans</h3>
-          <ul className="list-disc list-inside">
+        <div className="artifact-block">
+          <h3 className="artifact-title">Repository Plans</h3>
+          <ul className="artifact-list">
             {repoPlanFiles.map(file => (
               <li key={file.path}>
                 <a
                   href={`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/runs/${runId}/files/${file.path}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: '#3b82f6' }}
+                  className="artifact-link"
                 >
                   {file.path}
                 </a>
-                {' '}({Math.round(file.size / 1024)} KB)
+                <span className="artifact-meta">{Math.round(file.size / 1024)} KB</span>
               </li>
             ))}
           </ul>
@@ -150,20 +146,20 @@ function ArtifactsViewer({ task }: { task: TaskRecord }) {
       )}
 
       {promptFiles.length > 0 && (
-        <div className="mb-4">
-          <h3 className="font-bold mb-2">Prompts</h3>
-          <ul className="list-disc list-inside">
+        <div className="artifact-block">
+          <h3 className="artifact-title">Prompts</h3>
+          <ul className="artifact-list">
             {promptFiles.map(file => (
               <li key={file.path}>
                 <a
                   href={`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/runs/${runId}/files/${file.path}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: '#3b82f6' }}
+                  className="artifact-link"
                 >
                   {file.path}
                 </a>
-                {' '}({Math.round(file.size / 1024)} KB)
+                <span className="artifact-meta">{Math.round(file.size / 1024)} KB</span>
               </li>
             ))}
           </ul>
@@ -171,26 +167,26 @@ function ArtifactsViewer({ task }: { task: TaskRecord }) {
       )}
 
       {commandFiles.length > 0 && (
-        <div className="mb-4">
-          <h3 className="font-bold mb-2">Commands</h3>
-          <ul className="list-disc list-inside">
+        <div className="artifact-block">
+          <h3 className="artifact-title">Commands</h3>
+          <ul className="artifact-list">
             {commandFiles.map(file => (
               <li key={file.path}>
                 <a
                   href={`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080'}/api/runs/${runId}/files/${file.path}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: '#3b82f6' }}
+                  className="artifact-link"
                 >
                   {file.path}
                 </a>
-                {' '}({Math.round(file.size / 1024)} KB)
+                <span className="artifact-meta">{Math.round(file.size / 1024)} KB</span>
               </li>
             ))}
           </ul>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -202,7 +198,7 @@ export default function TaskDetailPage() {
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
-  const loadTask = async () => {
+  const loadTask = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -213,9 +209,9 @@ export default function TaskDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [taskId]);
 
-  const handleCancel = async () => {
+  const handleCancel = useCallback(async () => {
     if (!confirm('Are you sure you want to cancel this task?')) {
       return;
     }
@@ -229,110 +225,119 @@ export default function TaskDetailPage() {
     } finally {
       setCancelling(false);
     }
-  };
+  }, [loadTask, taskId]);
 
   useEffect(() => {
     loadTask();
-  }, [taskId]);
+  }, [loadTask]);
+
+  const canCancel = useMemo(() => {
+    if (!task) {
+      return false;
+    }
+    return task.status !== 'SUCCEEDED' && task.status !== 'FAILED' && task.status !== 'CANCELLED';
+  }, [task]);
 
   if (loading) {
-    return <div className="text-gray-600">Loading task...</div>;
+    return <div className="panel callout">Loading task...</div>;
   }
 
   if (error || !task) {
     return (
-      <div className="p-4 bg-red-100 text-red-700 rounded">
-        {error || 'Task not found'}
-      </div>
+      <div className="error-callout">{error || 'Task not found'}</div>
     );
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
+    <div className="page-stack">
+      <section className="panel panel-hero">
         <div>
-          <Link href="/tasks" style={{ color: '#3b82f6', fontSize: '0.875rem' }}>
+          <Link href="/tasks" className="task-link back-link">
             ← Back to Tasks
           </Link>
-          <h1 className="text-2xl font-bold mt-2">Task Details</h1>
+          <h1 className="page-title">Task Details</h1>
+          <p className="page-subtitle">Inspect lifecycle, request payload, and run artifacts.</p>
         </div>
-        {task.status !== 'SUCCEEDED' && task.status !== 'FAILED' && task.status !== 'CANCELLED' && (
+        {canCancel && (
           <button
             onClick={handleCancel}
             disabled={cancelling}
-            className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+            className="danger-button"
           >
             {cancelling ? 'Cancelling...' : 'Cancel Task'}
           </button>
         )}
-      </div>
+      </section>
 
-      <div className="bg-white shadow rounded-lg p-6 mb-4">
-        <div className="grid" style={{ gridTemplateColumns: '200px 1fr', gap: '1rem' }}>
-          <div className="font-bold">ID:</div>
-          <div>{task.id}</div>
+      <section className="panel">
+        <h2 className="section-title">Execution Snapshot</h2>
+        <dl className="details-grid">
+          <dt>ID</dt>
+          <dd>{task.id}</dd>
 
-          <div className="font-bold">Status:</div>
-          <div><StatusBadge status={task.status} /></div>
+          <dt>Status</dt>
+          <dd>
+            <StatusBadge status={task.status} />
+          </dd>
 
-          <div className="font-bold">Created:</div>
-          <div>{new Date(task.created_at).toLocaleString()}</div>
+          <dt>Created</dt>
+          <dd>{new Date(task.created_at).toLocaleString()}</dd>
 
-          <div className="font-bold">Updated:</div>
-          <div>{new Date(task.updated_at).toLocaleString()}</div>
+          <dt>Updated</dt>
+          <dd>{new Date(task.updated_at).toLocaleString()}</dd>
 
-          <div className="font-bold">Attempts:</div>
-          <div>{task.attempts}</div>
+          <dt>Attempts</dt>
+          <dd>{task.attempts}</dd>
 
           {task.status_reason && (
             <>
-              <div className="font-bold">Status Reason:</div>
-              <div>{task.status_reason}</div>
+              <dt>Status Reason</dt>
+              <dd>{task.status_reason}</dd>
             </>
           )}
 
           {task.last_error && (
             <>
-              <div className="font-bold">Last Error:</div>
-              <div className="text-red-700">{task.last_error}</div>
+              <dt>Last Error</dt>
+              <dd className="error-text">{task.last_error}</dd>
             </>
           )}
 
           {task.artifacts_dir && (
             <>
-              <div className="font-bold">Artifacts:</div>
-              <div>{task.artifacts_dir}</div>
+              <dt>Artifacts</dt>
+              <dd>{task.artifacts_dir}</dd>
             </>
           )}
-        </div>
-      </div>
+        </dl>
+      </section>
 
-      <div className="bg-white shadow rounded-lg p-6 mb-4">
-        <h2 className="text-xl font-bold mb-4">Request</h2>
-        <div className="grid" style={{ gridTemplateColumns: '200px 1fr', gap: '1rem' }}>
-          <div className="font-bold">Goal:</div>
-          <div>{task.request.goal}</div>
+      <section className="panel">
+        <h2 className="section-title">Request Payload</h2>
+        <dl className="details-grid">
+          <dt>Goal</dt>
+          <dd>{task.request.goal}</dd>
 
-          <div className="font-bold">Repositories:</div>
-          <div>
-            <ul className="list-disc list-inside">
+          <dt>Repositories</dt>
+          <dd>
+            <ul className="repo-list">
               {task.request.repos.map((repo, i) => (
                 <li key={i}>{repo}</li>
               ))}
             </ul>
-          </div>
+          </dd>
 
-          <div className="font-bold">Max Rounds:</div>
-          <div>{task.request.max_rounds}</div>
+          <dt>Max Rounds</dt>
+          <dd>{task.request.max_rounds}</dd>
 
           {task.request.agent_provider && (
             <>
-              <div className="font-bold">Agent Provider:</div>
-              <div>{task.request.agent_provider}</div>
+              <dt>Agent Provider</dt>
+              <dd>{task.request.agent_provider}</dd>
             </>
           )}
-        </div>
-      </div>
+        </dl>
+      </section>
 
       {task.status === 'HITL_REQUIRED' && (
         <HITLResolutionForm task={task} onResolved={loadTask} />

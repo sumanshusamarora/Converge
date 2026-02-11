@@ -17,6 +17,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -275,8 +276,6 @@ class DatabaseTaskQueue(TaskQueue):
         No Alembic in this iteration, so this method performs idempotent schema
         extension checks for existing deployments.
         """
-        inspector = inspect(self._engine)
-        columns = {column["name"] for column in inspector.get_columns("tasks")}
         add_specs: dict[str, str] = {
             "source": "TEXT",
             "source_event_id": "TEXT",
@@ -288,6 +287,8 @@ class DatabaseTaskQueue(TaskQueue):
             "resolution_json": "TEXT",
         }
         with self._engine.begin() as conn:
+            self._acquire_schema_lock(conn)
+            columns = {column["name"] for column in inspect(conn).get_columns("tasks")}
             for column_name, column_sql_type in add_specs.items():
                 if column_name not in columns:
                     conn.execute(
@@ -299,6 +300,11 @@ class DatabaseTaskQueue(TaskQueue):
                     "idx_tasks_source_dedupe_key_unique ON tasks(dedupe_key)"
                 )
             )
+
+    def _acquire_schema_lock(self, conn: Connection) -> None:
+        """Serialize schema extension DDL on Postgres to avoid startup races."""
+        if self._dialect_name in {"postgresql", "postgres"}:
+            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('converge.tasks.schema'))"))
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)

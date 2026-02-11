@@ -207,8 +207,9 @@ def test_policy_from_env_custom_env_dict() -> None:
     assert policy.allowlisted_commands == ["pytest", "ruff"]
 
 
-def test_policy_from_env_uses_default_allowlist() -> None:
+def test_policy_from_env_uses_default_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that default allowlist is used when not specified."""
+    monkeypatch.delenv("CONVERGE_ALLOWLISTED_CMDS", raising=False)
     policy = policy_from_env_and_flags()
 
     default_allowlist = get_default_allowlist()

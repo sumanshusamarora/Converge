@@ -27,6 +27,7 @@ docker-compose up --build
 
 - API: http://localhost:8080
 - UI: http://localhost:3000
+- Postgres: internal-only by default (no host port published)
 
 ## How Converge Works
 

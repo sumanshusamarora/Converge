@@ -57,3 +57,9 @@ Behavior:
 docker-compose down -v
 docker-compose up --build
 ```
+
+- If startup fails with `address already in use`, set host port overrides in `.env`:
+  - `CONVERGE_API_HOST_PORT` (default `8080`)
+  - `CONVERGE_FRONTEND_HOST_PORT` (default `3000`)
+
+- Postgres is internal-only in default compose setup. If you need host DB access, add a port mapping for `postgres` in a local compose override file.
