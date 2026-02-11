@@ -822,7 +822,7 @@ def test_apply_threshold_max_diff_lines(
         ),
         patch(
             "converge.execution.codex_apply.get_diff_line_counts",
-            return_value=(80, 50),  # Total 130 > 100
+            return_value=(80, 50),  # Total: 80 + 50 = 130 > 100
         ),
         patch(
             "converge.execution.codex_apply.get_diff_bytes",

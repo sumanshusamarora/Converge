@@ -284,7 +284,11 @@ def get_diff_numstat(repo_path: Path) -> list[tuple[str, int, int]]:
             raise GitError(f"git diff --numstat failed: {result.stderr}")
 
         stats = []
-        for line in result.stdout.strip().split("\n"):
+        stdout = result.stdout.strip()
+        if not stdout:
+            return stats
+
+        for line in stdout.split("\n"):
             line = line.strip()
             if not line:
                 continue
