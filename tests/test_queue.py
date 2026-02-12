@@ -72,7 +72,9 @@ def test_worker_run_once_completes_task_and_stores_artifacts(
         agent_provider: str | None,
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
+        thread_id: str | None = None,
     ) -> RunOutcome:
+        assert thread_id == task.id
         artifacts_dir = tmp_path / "artifacts"
         artifacts_dir.mkdir()
         (artifacts_dir / "summary.md").write_text("ok", encoding="utf-8")
@@ -224,9 +226,11 @@ def test_worker_resume_with_hitl_resolution(
         agent_provider: str | None,
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
+        thread_id: str | None = None,
     ) -> RunOutcome:
         first_run_called["called"] = True
         assert hitl_resolution is None  # First run has no resolution
+        assert thread_id == task.id
         return RunOutcome(
             status="HITL_REQUIRED",
             summary="needs input",
@@ -260,9 +264,11 @@ def test_worker_resume_with_hitl_resolution(
         agent_provider: str | None,
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
+        thread_id: str | None = None,
     ) -> RunOutcome:
         second_run_called["called"] = True
         second_run_called["resolution"] = hitl_resolution
+        assert thread_id == task.id
         return RunOutcome(
             status="CONVERGED",
             summary="completed",

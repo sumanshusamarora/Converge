@@ -85,7 +85,7 @@ def policy_from_env_and_request(
     """Create an ExecutionPolicy from environment, task metadata, and CLI flags.
 
     Execution is allowed only when BOTH:
-    - env CONVERGE_CODEX_ENABLED=true
+    - env CONVERGE_CODING_AGENT_EXEC_ENABLED=true
     - task/CLI explicit allow-exec flag is set
 
     Args:
@@ -105,8 +105,8 @@ def policy_from_env_and_request(
     if cli_flags is None:
         cli_flags = {}
 
-    # Check if Codex execution is enabled via environment
-    codex_enabled = env.get("CONVERGE_CODEX_ENABLED", "false").lower() == "true"
+    # Check if coding-agent execution is enabled via environment
+    execution_enabled = env.get("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false").lower() == "true"
 
     # Check if execution is explicitly allowed via task or CLI flags
     task_allow_exec = task_request_metadata.get("allow_exec", False)
@@ -114,7 +114,7 @@ def policy_from_env_and_request(
     allow_exec_flag = task_allow_exec or cli_allow_exec
 
     # Execution is allowed only if BOTH conditions are met
-    if codex_enabled and allow_exec_flag:
+    if execution_enabled and allow_exec_flag:
         mode = ExecutionMode.EXECUTE_ALLOWED
     else:
         mode = ExecutionMode.PLAN_ONLY

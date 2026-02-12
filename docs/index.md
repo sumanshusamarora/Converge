@@ -6,7 +6,7 @@ Converge coordinates work across peer repositories by generating plans, tracking
 
 - A coordination layer for multi-repo work.
 - A task queue + worker system that runs bounded orchestration.
-- An artifact generator (summaries, responsibility matrix, run metadata, and per-repo plan packs).
+- An artifact generator (summaries, responsibility matrix, contract checks, run metadata, and per-repo plan packs).
 
 ## What Converge is not
 
@@ -22,3 +22,8 @@ Converge coordinates work across peer repositories by generating plans, tracking
 - **HITL**: Human-in-the-loop escalation state (`HITL_REQUIRED`) when Converge needs input.
 - **Provider**: Planning adapter used per repository (`codex` or `copilot`).
 - **Execution mode**: Policy setting (`plan`, `interactive`, `headless`) controlling safety/runtime expectations for execution-capable integrations.
+
+## Example trace walkthroughs
+
+- [Opik Trace Walkthrough (Heuristic Planning)](opik-trace-walkthrough-heuristic.md)
+- [Opik Trace Walkthrough (Codex Enabled)](opik-trace-walkthrough-codex-enabled.md)

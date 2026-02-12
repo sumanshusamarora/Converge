@@ -17,6 +17,7 @@ export type TaskRecord = {
   request: TaskRequest;
   last_error?: string | null;
   artifacts_dir?: string | null;
+  hitl_questions?: string[];
   status_reason?: string | null;
 };
 

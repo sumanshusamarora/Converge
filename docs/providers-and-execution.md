@@ -3,9 +3,12 @@
 ## Provider roles today
 
 ### Codex provider
-- Planning is implemented via heuristic prompt-pack generation.
+- Planning is Codex-first via `codex exec` in read-only mode when CLI is available.
+- Converge auto-selects a working model from fallback order (`gpt-5.3-codex -> gpt-5 -> gpt-5-mini`) unless you set `CONVERGE_CODING_AGENT_MODEL`.
+- If Codex CLI planning cannot run, Converge falls back to heuristic prompt-pack generation.
+- `CONVERGE_CODING_AGENT_PLAN_MODE=disable` forces heuristic planning fallback.
 - `supports_execution()` returns true, but workflow integration is still plan-first and safety-gated.
-- `CONVERGE_CODEX_ENABLED=true` only enables execution gating checks; it does not turn Converge into autonomous code application by default.
+- `CONVERGE_CODING_AGENT_EXEC_ENABLED=true` only enables execution gating checks; it does not turn Converge into autonomous code application by default.
 
 ### Copilot provider
 - Planning-only adapter.
@@ -16,12 +19,12 @@
 
 For each repo, Converge writes:
 - `repo-plans/<repo>/plan.md`
-- `repo-plans/<repo>/copilot-prompt.txt`
+- `repo-plans/<repo>/agent-prompt.txt`
 - `repo-plans/<repo>/commands.sh`
 
 Golden path:
 1. Open target repository in VS Code.
-2. Open `copilot-prompt.txt` from run artifacts.
+2. Open `agent-prompt.txt` from run artifacts.
 3. Paste into Copilot Chat and apply iteratively.
 4. Validate with repo test/lint/type checks.
 

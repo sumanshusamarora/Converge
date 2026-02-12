@@ -49,7 +49,7 @@ Expected result:
 ## Quickstart 2: Docker Compose (Postgres + API + Worker + UI)
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 Services:

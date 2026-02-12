@@ -1,5 +1,7 @@
 """Tests for agent abstraction layer."""
 
+import json
+import logging
 import subprocess
 from pathlib import Path
 
@@ -15,17 +17,23 @@ from converge.core.config import ConvergeConfig
 from converge.orchestration.coordinator import Coordinator
 
 
+@pytest.fixture(autouse=True)
+def _clear_codex_plan_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep planning mode tests deterministic regardless of caller env."""
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+
 def test_agent_factory_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that factory creates CodexAgent by default."""
-    monkeypatch.delenv("CONVERGE_AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("CONVERGE_CODING_AGENT", raising=False)
     agent = create_agent()
     assert isinstance(agent, CodexAgent)
     assert agent.provider == AgentProvider.CODEX
 
 
 def test_agent_factory_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that factory respects CONVERGE_AGENT_PROVIDER env var."""
-    monkeypatch.setenv("CONVERGE_AGENT_PROVIDER", "copilot")
+    """Test that factory respects CONVERGE_CODING_AGENT env var."""
+    monkeypatch.setenv("CONVERGE_CODING_AGENT", "copilot")
     agent = create_agent()
     assert isinstance(agent, GitHubCopilotAgent)
     assert agent.provider == AgentProvider.COPILOT
@@ -105,8 +113,10 @@ def test_copilot_agent_hitl_required_for_missing_repo(tmp_path: Path) -> None:
 
 
 def test_codex_agent_plan_disabled_exec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that CodexAgent does not execute when CONVERGE_CODEX_ENABLED is false."""
-    monkeypatch.setenv("CONVERGE_CODEX_ENABLED", "false")
+    """Test that CodexAgent does not execute when CONVERGE_CODING_AGENT_EXEC_ENABLED is false."""
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: None)
 
     repo_dir = tmp_path / "test-repo"
     repo_dir.mkdir()
@@ -136,6 +146,384 @@ def test_codex_agent_plan_disabled_exec(tmp_path: Path, monkeypatch: pytest.Monk
     assert len(result.proposed_changes) > 0
 
 
+def test_codex_agent_plan_uses_codex_cli_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+
+    repo_context = RepoContext(
+        path=repo_dir,
+        kind="frontend",
+        signals=["package.json"],
+        readme_excerpt=None,
+    )
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+
+    def fake_run(
+        cmd: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "summary": "Codex-generated plan",
+                    "proposed_changes": ["Update task list UI", "Add HITL panel"],
+                    "questions_for_hitl": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("converge.agents.codex_agent.subprocess.run", fake_run)
+
+    result = CodexAgent().plan(task)
+
+    assert result.status == "OK"
+    assert result.summary == "Codex-generated plan"
+    assert result.proposed_changes == ["Update task list UI", "Add HITL panel"]
+    assert result.raw["execution_mode"] == "codex_cli"
+
+
+def test_codex_agent_plan_falls_back_on_codex_cli_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+
+    repo_context = RepoContext(
+        path=repo_dir,
+        kind="frontend",
+        signals=["package.json"],
+        readme_excerpt=None,
+    )
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, stdout="", stderr="boom"),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = CodexAgent().plan(task)
+
+    assert result.status in ("OK", "HITL_REQUIRED")
+    assert result.raw["execution_mode"] == "heuristic"
+    assert "stderr_tail=boom" in caplog.text
+
+
+def test_codex_agent_plan_force_mode_forces_codex_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_PLAN_MODE", "force")
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+    repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+
+    invoked = {"value": False}
+
+    def fake_run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        invoked["value"] = True
+        return subprocess.CompletedProcess(args[0], 1, stdout="", stderr="boom")
+
+    monkeypatch.setattr("converge.agents.codex_agent.subprocess.run", fake_run)
+
+    _ = CodexAgent().plan(task)
+    assert invoked["value"] is True
+
+
+def test_codex_agent_plan_falls_back_to_next_model_on_access_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_MODEL_CANDIDATES", raising=False)
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+    repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    calls: list[str] = []
+
+    def fake_run(
+        cmd: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        model = cmd[cmd.index("-m") + 1]
+        calls.append(model)
+        if model == "gpt-5.3-codex":
+            return subprocess.CompletedProcess(
+                cmd,
+                1,
+                stdout="",
+                stderr="The model `gpt-5.3-codex` does not exist or you do not have access to it.",
+            )
+        output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "summary": "Codex-generated plan",
+                    "proposed_changes": ["Update task list UI"],
+                    "questions_for_hitl": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("converge.agents.codex_agent.subprocess.run", fake_run)
+
+    result = CodexAgent().plan(task)
+
+    assert result.status == "OK"
+    assert result.raw["execution_mode"] == "codex_cli"
+    assert result.raw["codex_model"] == "gpt-5"
+    assert calls[:2] == ["gpt-5.3-codex", "gpt-5"]
+
+
+def test_codex_agent_plan_falls_back_on_unsupported_model_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_MODEL", raising=False)
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_MODEL_CANDIDATES", "gpt-5-mini,gpt-5")
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+    repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    calls: list[str] = []
+
+    def fake_run(
+        cmd: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        model = cmd[cmd.index("-m") + 1]
+        calls.append(model)
+        if model == "gpt-5-mini":
+            return subprocess.CompletedProcess(
+                cmd,
+                1,
+                stdout="",
+                stderr=(
+                    "{\"detail\":\"The 'gpt-5-mini' model is not supported when using Codex "
+                    "with a ChatGPT account.\"}"
+                ),
+            )
+        output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "summary": "Codex-generated plan",
+                    "proposed_changes": ["Update task list UI"],
+                    "questions_for_hitl": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("converge.agents.codex_agent.subprocess.run", fake_run)
+
+    result = CodexAgent().plan(task)
+
+    assert result.status == "OK"
+    assert result.raw["execution_mode"] == "codex_cli"
+    assert result.raw["codex_model"] == "gpt-5"
+    assert calls[:2] == ["gpt-5-mini", "gpt-5"]
+
+
+def test_codex_agent_plan_uses_explicit_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_MODEL", "gpt-5")
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+    repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    models_used: list[str] = []
+
+    def fake_run(
+        cmd: list[str],
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        models_used.append(cmd[cmd.index("-m") + 1])
+        output_path = Path(cmd[cmd.index("--output-last-message") + 1])
+        output_path.write_text(
+            json.dumps(
+                {
+                    "summary": "Codex-generated plan",
+                    "proposed_changes": ["Update task list UI"],
+                    "questions_for_hitl": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("converge.agents.codex_agent.subprocess.run", fake_run)
+
+    result = CodexAgent().plan(task)
+
+    assert result.status == "OK"
+    assert models_used == ["gpt-5"]
+    assert result.raw["codex_model"] == "gpt-5"
+
+
+def test_codex_agent_plan_diagnostics_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout="logged in", stderr=""
+        ),
+    )
+
+    diagnostics = CodexAgent().plan_diagnostics()
+
+    assert diagnostics["should_attempt_codex_plan"] is True
+    assert diagnostics["planning_mode"] == "codex_cli"
+    assert diagnostics["codex_binary"] == "/usr/bin/codex"
+    assert diagnostics["fallback_reasons"] == []
+
+
+def test_codex_agent_plan_diagnostics_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_PLAN_MODE", "disable")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: None)
+
+    diagnostics = CodexAgent().plan_diagnostics()
+
+    assert diagnostics["should_attempt_codex_plan"] is False
+    assert diagnostics["planning_mode"] == "heuristic"
+    fallback_reasons = diagnostics["fallback_reasons"]
+    assert isinstance(fallback_reasons, list)
+    assert any(
+        "CONVERGE_CODING_AGENT_PLAN_MODE=disable" in reason for reason in fallback_reasons
+    )
+
+
+def test_codex_agent_plan_diagnostics_disabled_with_plan_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_PLAN_MODE", "disable")
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+
+    diagnostics = CodexAgent().plan_diagnostics()
+
+    assert diagnostics["should_attempt_codex_plan"] is False
+    assert diagnostics["planning_mode"] == "heuristic"
+    assert diagnostics["codex_plan_mode"] == "disable"
+    fallback_reasons = diagnostics["fallback_reasons"]
+    assert isinstance(fallback_reasons, list)
+    assert any(
+        "CONVERGE_CODING_AGENT_PLAN_MODE=disable" in reason for reason in fallback_reasons
+    )
+
+
+def test_codex_agent_plan_diagnostics_force_mode_without_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_PLAN_MODE", "force")
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: None)
+
+    diagnostics = CodexAgent().plan_diagnostics()
+
+    assert diagnostics["should_attempt_codex_plan"] is True
+    assert diagnostics["planning_mode"] == "heuristic"
+    assert diagnostics["codex_plan_mode"] == "force"
+
+
+def test_codex_agent_plan_diagnostics_recommends_install_when_missing_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: None)
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+
+    diagnostics = CodexAgent().plan_diagnostics()
+
+    assert diagnostics["should_attempt_codex_plan"] is False
+    assert diagnostics["planning_mode"] == "heuristic"
+    recommendations = diagnostics["recommendations"]
+    assert isinstance(recommendations, list)
+    assert any("install-codex-cli" in text for text in recommendations)
+
+
+def test_codex_agent_plan_logs_model_unavailable_and_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_MODEL", raising=False)
+    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr="The model `gpt-5.3-codex` does not exist or you do not have access to it.",
+        ),
+    )
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "package.json").write_text('{"name": "repo"}', encoding="utf-8")
+    repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
+    task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
+
+    with caplog.at_level(logging.WARNING):
+        result = CodexAgent().plan(task)
+
+    assert result.raw["execution_mode"] == "heuristic"
+    assert "model unavailable" in caplog.text
+
+
 def test_codex_agent_supports_execution() -> None:
     """Test that CodexAgent reports it supports execution."""
     agent = CodexAgent()
@@ -155,6 +543,7 @@ def test_workflow_writes_prompts(
     """Test that coordinator workflow writes prompts directory."""
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_PLAN_MODE", "disable")
 
     api_dir = tmp_path / "api"
     web_dir = tmp_path / "web"
@@ -191,7 +580,7 @@ def test_workflow_writes_prompts(
 
 
 def test_cli_agent_provider_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that --agent-provider flag works correctly."""
+    """Test that --coding-agent flag works correctly."""
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
@@ -216,7 +605,7 @@ def test_cli_agent_provider_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             "ERROR",
             "--no-llm",
             "--no-tracing",
-            "--agent-provider",
+            "--coding-agent",
             "copilot",
         ],
     )
@@ -236,10 +625,10 @@ def test_cli_agent_provider_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_cli_enable_codex_exec_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test that --enable-codex-exec flag sets the environment variable."""
+    """Test that --enable-agent-exec flag sets the environment variable."""
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("CONVERGE_CODEX_ENABLED", "false")
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false")
 
     runner = CliRunner()
     output_dir = tmp_path / "out"
@@ -248,7 +637,7 @@ def test_cli_enable_codex_exec_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     api_dir.mkdir()
     (api_dir / "pyproject.toml").write_text("[project]\nname='api'\n", encoding="utf-8")
 
-    # Invoke CLI with --enable-codex-exec
+    # Invoke CLI with --enable-agent-exec
     result = runner.invoke(
         cli,
         [
@@ -263,13 +652,13 @@ def test_cli_enable_codex_exec_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPa
             "ERROR",
             "--no-llm",
             "--no-tracing",
-            "--enable-codex-exec",
+            "--enable-agent-exec",
         ],
     )
 
     assert result.exit_code in (0, 2)
 
-    # Verify CONVERGE_CODEX_ENABLED was set (indirectly via success)
+    # Verify CONVERGE_CODING_AGENT_EXEC_ENABLED was set (indirectly via success)
     # We can't easily check env from here, but the fact that it ran is a good sign
 
 

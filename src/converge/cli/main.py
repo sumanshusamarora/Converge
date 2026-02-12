@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import click
 
+from converge.agents.codex_agent import CodexAgent
 from converge.core.config import load_queue_settings, load_server_settings
 from converge.core.env import load_environment
 from converge.core.logging import setup_logging
@@ -28,6 +33,141 @@ def cli() -> None:
     Converge helps multiple repositories that build one product
     collaborate, decide, and converge safely.
     """
+
+
+@cli.command("install-codex-cli")
+@click.option(
+    "--package-manager",
+    default="auto",
+    type=click.Choice(["auto", "npm", "pnpm", "yarn"], case_sensitive=False),
+    help="Package manager to use for Codex CLI install",
+)
+@click.option(
+    "--run",
+    "run_script",
+    is_flag=True,
+    default=False,
+    help="Execute the install script immediately",
+)
+def install_codex_cli(package_manager: str, run_script: bool) -> None:
+    """Print or run a script that installs Codex CLI."""
+    selected_pm = _resolve_package_manager(package_manager.lower())
+    script = _build_codex_install_script(selected_pm)
+
+    if not run_script:
+        click.echo(script)
+        return
+
+    result = subprocess.run(
+        ["/bin/bash", "-lc", script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise click.ClickException(
+            f"Codex CLI install failed (exit={result.returncode}): {(result.stderr or '').strip()}"
+        )
+
+    click.echo((result.stdout or "").strip())
+
+
+@cli.command("doctor")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    default=False,
+    help="Print diagnostics as JSON",
+)
+def doctor(json_output: bool) -> None:
+    """Show runtime diagnostics for planning/execution setup."""
+    load_environment()
+    diagnostics = CodexAgent().plan_diagnostics()
+
+    if json_output:
+        click.echo(json.dumps(diagnostics, indent=2, sort_keys=True))
+        return
+
+    planning_mode = str(diagnostics.get("planning_mode", "heuristic"))
+    should_attempt = bool(diagnostics.get("should_attempt_codex_plan", False))
+    codex_binary = diagnostics.get("codex_binary")
+    fallback_reasons = diagnostics.get("fallback_reasons", [])
+    recommendations = diagnostics.get("recommendations", [])
+    login_status = diagnostics.get("codex_login_status", {})
+    codex_model_configured = diagnostics.get("codex_model_configured")
+    codex_model_selected = diagnostics.get("codex_model_selected")
+    codex_model_candidates = diagnostics.get("codex_model_candidates", [])
+    codex_plan_mode = diagnostics.get("codex_plan_mode")
+
+    status_label = "PASS" if planning_mode == "codex_cli" else "WARN"
+    click.echo(f"{status_label}: Codex planning mode = {planning_mode}")
+    click.echo(f"should_attempt_codex_plan: {str(should_attempt).lower()}")
+    if codex_plan_mode:
+        click.echo(f"codex_plan_mode: {codex_plan_mode}")
+    click.echo(f"codex_path: {diagnostics.get('codex_path')}")
+    click.echo(f"codex_binary: {codex_binary or 'not found'}")
+    click.echo(f"codex_model_configured: {codex_model_configured or 'auto'}")
+    click.echo(f"codex_model_selected: {codex_model_selected or 'not_selected_yet'}")
+    if isinstance(codex_model_candidates, list) and codex_model_candidates:
+        candidates = ", ".join(str(item) for item in codex_model_candidates)
+        click.echo(f"codex_model_candidates: {candidates}")
+
+    if isinstance(login_status, dict):
+        checked = bool(login_status.get("checked", False))
+        if checked:
+            auth_state = login_status.get("authenticated")
+            if auth_state is True:
+                auth_text = "true"
+            elif auth_state is False:
+                auth_text = "false"
+            else:
+                auth_text = "unknown"
+            click.echo(f"codex_authenticated: {auth_text}")
+        else:
+            click.echo("codex_authenticated: not_checked")
+
+    if isinstance(fallback_reasons, list) and fallback_reasons:
+        click.echo("fallback_reasons:")
+        for reason in fallback_reasons:
+            click.echo(f"- {reason}")
+    else:
+        click.echo("fallback_reasons: none")
+
+    if isinstance(recommendations, list) and recommendations:
+        click.echo("recommendations:")
+        for recommendation in recommendations:
+            click.echo(f"- {recommendation}")
+
+
+def _resolve_package_manager(package_manager: str) -> str:
+    if package_manager != "auto":
+        return package_manager
+
+    for candidate in ("npm", "pnpm", "yarn"):
+        if shutil.which(candidate):
+            return candidate
+    return "npm"
+
+
+def _build_codex_install_script(package_manager: str) -> str:
+    install_cmds = {
+        "npm": "npm install -g @openai/codex",
+        "pnpm": "pnpm add -g @openai/codex",
+        "yarn": "yarn global add @openai/codex",
+    }
+    install_cmd = install_cmds[package_manager]
+    return textwrap.dedent(
+        f"""\
+        set -euo pipefail
+        if ! command -v {package_manager} >/dev/null 2>&1; then
+          echo "{package_manager} is not installed. Please install it first."
+          exit 1
+        fi
+        {install_cmd}
+        codex --version
+        """
+    )
 
 
 @cli.command()
@@ -51,6 +191,11 @@ def cli() -> None:
     help="Logging level (default: INFO)",
 )
 @click.option("--model", default=None, help="Override OpenAI model for proposal generation")
+@click.option(
+    "--coding-agent-model",
+    default=None,
+    help="Override coding-agent planning model (otherwise auto-selects best available)",
+)
 @click.option("--no-llm", is_flag=True, default=False, help="Force heuristic proposal generation")
 @click.option(
     "--no-tracing",
@@ -65,16 +210,16 @@ def cli() -> None:
     help="HITL strategy to use (default: conditional)",
 )
 @click.option(
-    "--agent-provider",
+    "--coding-agent",
     default=None,
     type=click.Choice(["codex", "copilot"], case_sensitive=False),
-    help="Agent provider to use (default: from CONVERGE_AGENT_PROVIDER or codex)",
+    help="Coding agent to use (default: from CONVERGE_CODING_AGENT or codex)",
 )
 @click.option(
-    "--enable-codex-exec",
+    "--enable-agent-exec",
     is_flag=True,
     default=False,
-    help="Enable Codex CLI execution (requires OPENAI_API_KEY)",
+    help="Enable coding-agent execution (provider support required)",
 )
 def coordinate(
     goal: str,
@@ -83,11 +228,12 @@ def coordinate(
     output_dir: str,
     log_level: str,
     model: str | None,
+    coding_agent_model: str | None,
     no_llm: bool,
     no_tracing: bool,
     hil_mode: str,
-    agent_provider: str | None,
-    enable_codex_exec: bool,
+    coding_agent: str | None,
+    enable_agent_exec: bool,
 ) -> None:
     """Coordinate changes across multiple repositories."""
     load_environment()
@@ -99,17 +245,19 @@ def coordinate(
         configure_opik()
         if model:
             os.environ["CONVERGE_OPENAI_MODEL"] = model
+        if coding_agent_model:
+            os.environ["CONVERGE_CODING_AGENT_MODEL"] = coding_agent_model
         if no_llm:
             os.environ["CONVERGE_NO_LLM"] = "true"
         os.environ["CONVERGE_HIL_MODE"] = hil_mode.lower()
-        if enable_codex_exec:
-            os.environ["CONVERGE_CODEX_ENABLED"] = "true"
+        if enable_agent_exec:
+            os.environ["CONVERGE_CODING_AGENT_EXEC_ENABLED"] = "true"
 
         outcome = run_coordinate(
             goal=goal,
             repos=list(repos),
             max_rounds=max_rounds,
-            agent_provider=agent_provider,
+            agent_provider=coding_agent,
             base_output_dir=Path(output_dir),
         )
 

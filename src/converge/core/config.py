@@ -23,7 +23,7 @@ class ConvergeConfig(BaseModel):
     no_llm: bool = False
     hil_mode: Literal["conditional", "interrupt"] = "conditional"
     agent_provider: str = "codex"
-    enable_codex_exec: bool = False
+    enable_agent_exec: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:

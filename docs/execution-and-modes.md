@@ -29,11 +29,11 @@ Task → Plan → (Optional) Execute → Artifacts → HITL → Resume
 
 By default, Converge is safe-first and plan-first.
 
-- If an LLM is available, planning can use it.
-- If not, Converge still plans using deterministic heuristics.
-- You can force heuristics even when an API key exists.
+- Repository plan generation uses the selected provider (`codex` or `copilot`).
+- Responsibility split proposal generation uses OpenAI when available, with heuristic fallback.
+- You can force heuristic proposal generation even when an API key exists.
 
-### Planning decision tree
+### Responsibility proposal decision tree
 
 ```text
 If CONVERGE_NO_LLM=true  → heuristic
@@ -45,9 +45,11 @@ Else → heuristic
 
 | Variable | What it does |
 |---|---|
-| `CONVERGE_NO_LLM` | Forces heuristic planning. |
-| `OPENAI_API_KEY` | Enables LLM planning when `CONVERGE_NO_LLM` is not set to true. |
-| `CONVERGE_AGENT_PROVIDER` | Chooses planning provider (`codex` or `copilot`). |
+| `CONVERGE_NO_LLM` | Forces heuristic responsibility proposal generation. |
+| `OPENAI_API_KEY` | Enables LLM responsibility proposals when `CONVERGE_NO_LLM` is not set to true. |
+| `CONVERGE_CODING_AGENT` | Chooses repository planning provider (`codex` or `copilot`). |
+| `CONVERGE_CODING_AGENT_MODEL` | Forces one coding-agent model for repository planning. |
+| `CONVERGE_CODING_AGENT_MODEL_CANDIDATES` | Optional fallback order for coding-agent model selection. |
 
 ## 3) Execution Modes (Primary Switch)
 
@@ -88,7 +90,7 @@ Providers decide **who plans** and **which execution paths are valid**.
 ### Copilot
 
 - Can plan.
-- Execution usage is interactive-only.
+- Does not execute code.
 - Intended for VS Code-driven workflows.
 
 ### Provider × mode matrix
@@ -96,7 +98,7 @@ Providers decide **who plans** and **which execution paths are valid**.
 | Provider | plan | interactive | headless |
 |----------|------|-------------|----------|
 | codex    | ✅   | ✅          | ✅ (if apply enabled) |
-| copilot  | ✅   | ✅          | ❌ |
+| copilot  | ✅   | ❌          | ❌ |
 
 ## 5) Codex Apply Safety Gates
 
@@ -138,11 +140,11 @@ Use when you want plans/artifacts without any execution risk.
 ### B) VS Code Copilot Workflow
 
 ```bash
-CONVERGE_AGENT_PROVIDER=copilot
-CONVERGE_EXECUTION_MODE=interactive
+CONVERGE_CODING_AGENT=copilot
+CONVERGE_EXECUTION_MODE=plan
 ```
 
-Use when you want interactive, developer-driven Copilot collaboration.
+Use when you want Copilot-oriented plan artifacts that a developer applies manually in VS Code.
 
 ### C) CI Verification (No Edits)
 
@@ -168,7 +170,7 @@ Use for bounded automation with explicit review thresholds.
 ## 7) Precedence Rules (Very Important)
 
 1. If execution mode is `plan`, nothing executes.
-2. Copilot never runs in `headless` mode.
+2. Copilot is planning-only (no execution path in interactive or headless mode).
 3. Codex apply requires explicit `CONVERGE_CODEX_APPLY=true`.
 4. `CONVERGE_NO_LLM` overrides `OPENAI_API_KEY`.
 5. Threshold violations trigger `HITL_REQUIRED`, not failure.
@@ -192,9 +194,9 @@ Typical reasons:
 
 This is a controlled stop, not a crash.
 
-### Why does Copilot not work in Docker?
+### Why is Copilot not executing anything?
 
-Copilot workflows are intended for interactive developer sessions. In non-interactive container/worker setups, use headless-capable Codex paths instead.
+Copilot is currently planning-only in Converge. For automated execution flows, use Codex with execution settings enabled.
 
 ### What happens if `OPENAI_API_KEY` is missing?
 

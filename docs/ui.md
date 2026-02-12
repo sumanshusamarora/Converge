@@ -20,6 +20,7 @@ Open `http://localhost:3000`.
   - create a task
 - `/tasks/[id]`:
   - view task details and request payload
+  - view HITL questions when status is `HITL_REQUIRED`
   - cancel active tasks
   - submit HITL resolution JSON for `HITL_REQUIRED`
   - browse/download run artifacts

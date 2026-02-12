@@ -40,6 +40,7 @@ class PollingWorker:
                     agent_provider=task.request.agent_provider,
                     base_output_dir=Path(".converge"),
                     hitl_resolution=hitl_resolution,
+                    thread_id=task.id,
                 )
 
                 if outcome.status == "FAILED":

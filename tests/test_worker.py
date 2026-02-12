@@ -44,6 +44,7 @@ def test_worker_cli_once_processes_one_task(
         agent_provider: str | None,
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
+        thread_id: str | None = None,
     ) -> RunOutcome:
         artifacts_dir = tmp_path / "cli-artifacts"
         artifacts_dir.mkdir(exist_ok=True)
@@ -78,6 +79,8 @@ def test_retry_behavior_until_failed(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         max_rounds: int,
         agent_provider: str | None,
         base_output_dir: Path | None,
+        hitl_resolution: dict[str, object] | None = None,
+        thread_id: str | None = None,
     ) -> object:
         raise RuntimeError("boom")
 

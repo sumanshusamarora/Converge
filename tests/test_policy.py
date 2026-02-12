@@ -109,7 +109,7 @@ def test_get_default_allowlist() -> None:
 
 def test_policy_from_env_plan_only_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that policy defaults to PLAN_ONLY when env not set."""
-    monkeypatch.delenv("CONVERGE_CODEX_ENABLED", raising=False)
+    monkeypatch.delenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", raising=False)
 
     policy = policy_from_env_and_request()
 
@@ -119,24 +119,24 @@ def test_policy_from_env_plan_only_by_default(monkeypatch: pytest.MonkeyPatch) -
 def test_policy_from_env_requires_both_flags(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that execution requires BOTH env and allow_exec flag."""
     # Only env set
-    monkeypatch.setenv("CONVERGE_CODEX_ENABLED", "true")
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "true")
     policy = policy_from_env_and_request(cli_flags={})
     assert policy.mode == ExecutionMode.PLAN_ONLY
 
     # Only flag set
-    monkeypatch.setenv("CONVERGE_CODEX_ENABLED", "false")
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false")
     policy = policy_from_env_and_request(cli_flags={"allow_exec": True})
     assert policy.mode == ExecutionMode.PLAN_ONLY
 
     # Both set
-    monkeypatch.setenv("CONVERGE_CODEX_ENABLED", "true")
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "true")
     policy = policy_from_env_and_request(cli_flags={"allow_exec": True})
     assert policy.mode == ExecutionMode.EXECUTE_ALLOWED
 
 
 def test_policy_from_env_with_task_allow_exec(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that task metadata allow_exec flag is respected."""
-    monkeypatch.setenv("CONVERGE_CODEX_ENABLED", "true")
+    monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "true")
 
     policy = policy_from_env_and_request(task_request_metadata={"allow_exec": True})
 
@@ -145,7 +145,7 @@ def test_policy_from_env_with_task_allow_exec(monkeypatch: pytest.MonkeyPatch) -
 
 def test_policy_from_env_custom_env_dict() -> None:
     """Test policy creation with custom env dict."""
-    custom_env = {"CONVERGE_CODEX_ENABLED": "true"}
+    custom_env = {"CONVERGE_CODING_AGENT_EXEC_ENABLED": "true"}
 
     policy = policy_from_env_and_request(
         env=custom_env,
@@ -189,17 +189,17 @@ def test_policy_from_env_uses_default_allowlist() -> None:
 
 
 def test_policy_from_env_case_insensitive_enabled() -> None:
-    """Test that CONVERGE_CODEX_ENABLED is case-insensitive."""
+    """Test that CONVERGE_CODING_AGENT_EXEC_ENABLED is case-insensitive."""
     test_cases = ["true", "TRUE", "True", "TrUe"]
 
     for value in test_cases:
-        env = {"CONVERGE_CODEX_ENABLED": value}
+        env = {"CONVERGE_CODING_AGENT_EXEC_ENABLED": value}
         policy = policy_from_env_and_request(env=env, cli_flags={"allow_exec": True})
         assert policy.mode == ExecutionMode.EXECUTE_ALLOWED
 
     # Test false values
     false_values = ["false", "FALSE", "False", "0", "no", ""]
     for value in false_values:
-        env = {"CONVERGE_CODEX_ENABLED": value}
+        env = {"CONVERGE_CODING_AGENT_EXEC_ENABLED": value}
         policy = policy_from_env_and_request(env=env, cli_flags={"allow_exec": True})
         assert policy.mode == ExecutionMode.PLAN_ONLY

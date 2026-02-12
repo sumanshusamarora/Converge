@@ -251,6 +251,10 @@ class DatabaseTaskQueue(TaskQueue):
         return row
 
     def _to_record(self, row: TaskRow) -> TaskRecord:
+        hitl_questions: list[str] = []
+        if row.hitl_questions_json:
+            hitl_questions = cast(list[str], json.loads(row.hitl_questions_json))
+
         return TaskRecord(
             id=row.id,
             status=TaskStatus(row.status),
@@ -262,6 +266,7 @@ class DatabaseTaskQueue(TaskQueue):
             artifacts_dir=row.artifacts_dir,
             source=row.source,
             idempotency_key=row.idempotency_key,
+            hitl_questions=hitl_questions,
             status_reason=row.status_reason,
             resolution_json=row.resolution_json,
         )

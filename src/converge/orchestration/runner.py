@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -30,15 +31,16 @@ def run_coordinate(
     agent_provider: str | None,
     base_output_dir: Path | None,
     hitl_resolution: dict[str, Any] | None = None,
+    thread_id: str | None = None,
 ) -> RunOutcome:
     """Execute the coordinate workflow and return a normalized outcome."""
-    final_agent_provider = agent_provider or os.getenv("CONVERGE_AGENT_PROVIDER", "codex")
+    final_agent_provider = agent_provider or os.getenv("CONVERGE_CODING_AGENT", "codex")
     no_llm = os.getenv("CONVERGE_NO_LLM", "false").lower() == "true"
     hil_mode = cast(
         Literal["conditional", "interrupt"],
         os.getenv("CONVERGE_HIL_MODE", "conditional").lower(),
     )
-    enable_codex_exec = os.getenv("CONVERGE_CODEX_ENABLED", "false").lower() == "true"
+    enable_agent_exec = os.getenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false").lower() == "true"
 
     config = ConvergeConfig(
         goal=goal,
@@ -50,24 +52,37 @@ def run_coordinate(
         no_llm=no_llm,
         hil_mode=hil_mode,
         agent_provider=cast(str, final_agent_provider),
-        enable_codex_exec=enable_codex_exec,
+        enable_agent_exec=enable_agent_exec,
     )
 
-    coordinator = Coordinator(config, hitl_resolution=hitl_resolution)
+    coordinator = Coordinator(config, hitl_resolution=hitl_resolution, thread_id=thread_id)
     final_state = coordinator.coordinate()
 
     hitl_questions: list[str] = []
     for repo_plan in final_state.get("repo_plans", []):
         hitl_questions.extend(repo_plan.get("questions_for_hitl", []))
 
+    interrupts = cast(list[Any], final_state.get("__interrupt__", []))
+    for interrupt in interrupts:
+        payload = getattr(interrupt, "value", interrupt)
+        if isinstance(payload, dict):
+            hitl_questions.append(json.dumps(payload, sort_keys=True))
+        else:
+            hitl_questions.append(str(payload))
+
+    final_status = cast(RunStatus, final_state["status"])
+    if interrupts and final_status != "FAILED":
+        final_status = "HITL_REQUIRED"
+
     summary = (
-        f"Goal '{goal}' finished with status {final_state['status']} "
+        f"Goal '{goal}' finished with status {final_status} "
         f"after {final_state['round']} rounds"
     )
+    artifacts_dir = str(final_state.get("artifacts_dir", coordinator.run_dir))
 
     return RunOutcome(
-        status=final_state["status"],
+        status=final_status,
         summary=summary,
-        artifacts_dir=str(coordinator.run_dir),
+        artifacts_dir=artifacts_dir,
         hitl_questions=hitl_questions,
     )

@@ -31,6 +31,8 @@ dependencies = [
     "uvicorn",
     "opik",
     "langgraph",
+    "langgraph-checkpoint-sqlite",
+    "langgraph-checkpoint-postgres",
     "langchain[openai]",
 ]
 

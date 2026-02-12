@@ -48,13 +48,23 @@ Typical planning outputs include repository-level plans and handoff artifacts th
 
 Planning may use LLM-based generation or deterministic heuristics, depending on configuration and key availability. If Converge cannot safely decide, it can request human input.
 
-### Step 4 — Optional Execution Phase
+### Step 4 — Contract Alignment Check
+
+Before final decisioning, Converge performs a repository-agnostic contract alignment pass:
+
+- discovers contract artifacts (for example OpenAPI, AsyncAPI, GraphQL, Protobuf, schema files)
+- detects obvious cross-repo drift and unresolved references
+- records findings in run artifacts (`contract-map.json`, `contract-checks.md`)
+
+If mismatches are detected, Converge can mark the run `HITL_REQUIRED`.
+
+### Step 5 — Optional Execution Phase
 
 Execution only happens when execution mode and provider settings allow it.
 
 In execution-capable runs, Converge may run commands and (when explicitly enabled) apply changes. Safety gates still apply, so risky or out-of-bounds outcomes can be stopped for review.
 
-### Step 5 — Artifact Generation
+### Step 6 — Artifact Generation
 
 Every run produces artifacts so the process is auditable and easy to resume.
 
@@ -65,13 +75,19 @@ What you can expect:
 - Execution logs (when execution is used)
 - Summary outputs for run review
 
-### Step 6 — HITL Interruption (if required)
+### Step 7 — HITL Interruption (if required)
 
 When human input is required, the task enters `HITL_REQUIRED`.
 
 After you submit a resolution, the task can be returned to the queue and resumed by a worker.
 
-### Step 7 — Final States
+In `interrupt` mode, resume uses LangGraph checkpoint state when available:
+- checkpoint key/thread: task id
+- persistence: queue DB when `SQLALCHEMY_DATABASE_URI` is set; otherwise local SQLite `sqlite:///./converge.db`
+
+If checkpoint storage is unavailable, worker resume still works as a fresh rerun with the submitted resolution payload.
+
+### Step 8 — Final States
 
 A task ends in one of these user-visible states:
 

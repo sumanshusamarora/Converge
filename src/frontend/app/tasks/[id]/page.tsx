@@ -14,6 +14,7 @@ function HITLResolutionForm({ task, onResolved }: { task: TaskRecord; onResolved
   const [resolution, setResolution] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const questions = task.hitl_questions || [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +36,16 @@ function HITLResolutionForm({ task, onResolved }: { task: TaskRecord; onResolved
     <section className="panel">
       <h2 className="section-title">Resolve HITL Task</h2>
       <p className="section-subtitle">Submit a JSON object with your decision and any supporting notes.</p>
+      {questions.length > 0 && (
+        <div className="field-block">
+          <label className="field-label">Questions to Answer</label>
+          <ul className="repo-list">
+            {questions.map((question, idx) => (
+              <li key={idx}>{question}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <form onSubmit={handleSubmit}>
         <div className="field-block">
           <label className="field-label">Resolution JSON</label>
@@ -109,8 +120,8 @@ function ArtifactsViewer({ task }: { task: TaskRecord }) {
 
   const runId = task.artifacts_dir.split('/').pop() || task.artifacts_dir;
   const repoPlanFiles = files.filter(f => f.path.startsWith('repo-plans/') && f.path.endsWith('plan.md'));
-  const promptFiles = files.filter(f => f.path.startsWith('prompts/') && f.path.endsWith('copilot-prompt.txt'));
-  const commandFiles = files.filter(f => f.path.startsWith('commands/') && f.path.endsWith('commands.sh'));
+  const promptFiles = files.filter(f => f.path.startsWith('repo-plans/') && f.path.endsWith('agent-prompt.txt'));
+  const commandFiles = files.filter(f => f.path.startsWith('repo-plans/') && f.path.endsWith('commands.sh'));
 
   return (
     <section className="panel">

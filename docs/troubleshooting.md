@@ -44,6 +44,17 @@ Fixes:
 Behavior:
 - Converge logs info and uses heuristic proposal generation.
 
+## Codex model access errors
+
+Symptoms:
+- Logs include messages like `model ... does not exist or you do not have access`
+- Codex planning repeatedly retries, then falls back
+
+Fixes:
+- run `converge doctor` and inspect `codex_model_candidates`
+- set `CONVERGE_CODING_AGENT_MODEL` to a model your account can access (for example `gpt-5`)
+- or tune fallback order via `CONVERGE_CODING_AGENT_MODEL_CANDIDATES`
+
 ## Opik disabled
 
 Behavior:
@@ -54,8 +65,8 @@ Behavior:
 - Rebuild cleanly after dependency changes:
 
 ```bash
-docker-compose down -v
-docker-compose up --build
+docker compose down -v
+docker compose up --build
 ```
 
 - If startup fails with `address already in use`, set host port overrides in `.env`:

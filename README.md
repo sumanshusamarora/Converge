@@ -22,7 +22,7 @@ converge worker
 ## Docker quickstart (Postgres + API + Worker + UI)
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 - API: http://localhost:8080
@@ -34,6 +34,21 @@ docker-compose up --build
 Converge runs tasks through a queue-and-worker lifecycle: submit a task, generate plans and artifacts, optionally execute when policy allows, and escalate to HITL when human decisions are needed. This keeps automation bounded while preserving clear audit trails for every run.
 
 See [How Converge Runs](docs/how-converge-runs.md) for a complete explanation.
+
+## Codex planning defaults
+
+Converge uses Codex CLI for repository planning when available and falls back automatically if a configured model is not accessible.
+
+- Default model candidates: `gpt-5.3-codex,gpt-5,gpt-5-mini`
+- Override model for one run: `converge coordinate --coding-agent-model gpt-5 ...`
+- Persisted env override: `CONVERGE_CODING_AGENT_MODEL=gpt-5`
+- Planning control mode: `CONVERGE_CODING_AGENT_PLAN_MODE=auto|force|disable`
+
+Check what your environment will do:
+
+```bash
+converge doctor
+```
 
 
 ## Documentation

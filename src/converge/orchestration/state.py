@@ -54,5 +54,6 @@ class OrchestrationState(TypedDict, total=False):
     human_decision: dict[str, Any] | None
     hil_mode: HILMode
     repo_plans: list[RepoPlan]
+    contract_analysis: dict[str, Any]
     agent_provider: str
     hitl_resolution: dict[str, Any] | None

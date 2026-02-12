@@ -27,12 +27,26 @@ This page is the authoritative user-facing configuration list.
 
 | Variable | Default | When needed | Description |
 |---|---|---|---|
-| `CONVERGE_AGENT_PROVIDER` | `codex` | coordinate/worker | Default provider if not passed in request/CLI. |
-| `CONVERGE_CODEX_ENABLED` | `false` | codex execution gating | Enables codex-execution gate checks (planning still works without execution). |
+| `CONVERGE_CODING_AGENT` | `codex` | coordinate/worker | Default coding agent if not passed in request/CLI. |
+| `CONVERGE_CODING_AGENT_EXEC_ENABLED` | `false` | execution gating | Enables coding-agent execution gate checks (planning still works without execution). |
+| `CONVERGE_CODING_AGENT_PATH` | `codex` | codex planning/execution | Binary/path used for coding-agent CLI invocation (Codex today). |
+| `CONVERGE_CODING_AGENT_MODEL` | unset | codex planning | Force one coding-agent model for planning attempts (for example `gpt-5`). |
+| `CONVERGE_CODING_AGENT_MODEL_CANDIDATES` | `gpt-5.3-codex,gpt-5,gpt-5-mini` | codex planning | Optional comma-separated fallback order used when `CONVERGE_CODING_AGENT_MODEL` is not set. |
+| `CONVERGE_CODING_AGENT_PLAN_MODE` | `auto` | codex planning | Planning mode: `auto` (CLI-detected), `force` (attempt even if detection fails), `disable` (heuristic only). |
 | `CONVERGE_OPENAI_MODEL` | `gpt-5-mini` | LLM proposals | Model override for proposal generation. |
 | `OPENAI_API_KEY` | _(none)_ | optional | If missing, Converge falls back to heuristic proposal generation. |
 | `CONVERGE_NO_LLM` | `false` | coordinate run | Force heuristic proposal path. |
 | `CONVERGE_HIL_MODE` | `conditional` | coordinate run | HITL routing mode: `conditional` retry loop or `interrupt`. |
+
+Minimal setup for Codex planning:
+- install Codex CLI (`converge install-codex-cli --run`)
+- set `CONVERGE_CODING_AGENT=codex`
+- optionally set `CONVERGE_CODING_AGENT_MODEL=gpt-5` if your account cannot access the first auto candidate
+
+Checkpoint resume notes:
+- In `interrupt` mode, Converge attempts DB-backed LangGraph checkpoints using `SQLALCHEMY_DATABASE_URI`.
+- If `SQLALCHEMY_DATABASE_URI` is not set, checkpointing defaults to local SQLite at `sqlite:///./converge.db`.
+- SQLite/Postgres checkpoint backends may require additional LangGraph checkpoint packages in your runtime image.
 
 ## Execution policy settings
 

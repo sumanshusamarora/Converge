@@ -15,7 +15,7 @@ def create_agent(name: str | None = None) -> CodingAgent:
 
     Args:
         name: Agent provider name ("codex" or "copilot").
-              If None, uses CONVERGE_AGENT_PROVIDER env var (default: "codex")
+              If None, uses CONVERGE_CODING_AGENT env var (default: "codex")
 
     Returns:
         CodingAgent instance
@@ -24,7 +24,7 @@ def create_agent(name: str | None = None) -> CodingAgent:
         ValueError: If provider name is unknown
     """
     if name is None:
-        name = os.getenv("CONVERGE_AGENT_PROVIDER", "codex")
+        name = os.getenv("CONVERGE_CODING_AGENT", "codex")
 
     name_lower = name.lower()
 

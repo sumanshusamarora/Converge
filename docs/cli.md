@@ -16,11 +16,12 @@ Key options:
 - `--max-rounds` (default `2`)
 - `--output-dir` (default `.converge`)
 - `--model` (sets `CONVERGE_OPENAI_MODEL` for this run)
+- `--coding-agent-model` (sets `CONVERGE_CODING_AGENT_MODEL` for this run; if omitted Converge auto-selects from fallback candidates)
 - `--no-llm`
 - `--no-tracing`
 - `--hil-mode` (`conditional` or `interrupt`)
-- `--agent-provider` (`codex` or `copilot`)
-- `--enable-codex-exec`
+- `--coding-agent` (`codex` or `copilot`)
+- `--enable-agent-exec`
 
 Exit codes:
 - `0`: run converged/succeeded
@@ -31,6 +32,8 @@ Artifacts written:
 - `<output-dir>/runs/<timestamp>/summary.md`
 - `<output-dir>/runs/<timestamp>/responsibility-matrix.md`
 - `<output-dir>/runs/<timestamp>/constraints.json`
+- `<output-dir>/runs/<timestamp>/contract-map.json`
+- `<output-dir>/runs/<timestamp>/contract-checks.md`
 - `<output-dir>/runs/<timestamp>/run.json`
 - optional `<output-dir>/runs/<timestamp>/repo-plans/...`
 
@@ -62,6 +65,40 @@ Behavior:
 Exit codes:
 - `0`: worker command exits cleanly (`--once`)
 - `1`: config/runtime error
+
+## `converge install-codex-cli`
+
+Purpose: print or run a shell script that installs Codex CLI.
+
+Usage:
+
+```bash
+converge install-codex-cli [--package-manager auto|npm|pnpm|yarn] [--run]
+```
+
+Behavior:
+- without `--run`: prints install script
+- with `--run`: executes install script and verifies `codex --version`
+
+## `converge doctor`
+
+Purpose: inspect runtime readiness for Codex planning and show why Converge may fall back to heuristic planning.
+
+Usage:
+
+```bash
+converge doctor [--json]
+```
+
+Behavior:
+- reports Codex planning mode (`codex_cli` or `heuristic`)
+- shows whether Codex planning will be attempted (`should_attempt_codex_plan`)
+- shows Codex planning control mode (`codex_plan_mode`)
+- shows resolved Codex binary path (or not found)
+- shows Codex model configuration/selection and candidate fallback order
+- prints fallback reasons when Codex planning path is unavailable
+- prints recommendations (for example installing Codex CLI or unsetting disable flags)
+- with `--json`: emits machine-readable diagnostics
 
 ## `converge server`
 

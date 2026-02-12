@@ -16,7 +16,7 @@ class _CompiledGraph:
     edges: dict[str, str]
     conditional_edges: dict[str, Callable[[Any], str]]
 
-    def invoke(self, state: Any) -> Any:
+    def invoke(self, state: Any, _config: dict[str, Any] | None = None) -> Any:
         node_name = self.entry_point
         current_state = state
 

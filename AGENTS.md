@@ -29,7 +29,7 @@ You are a Codex agent working on the Converge repository. These instructions gov
 
 Codex execution is gated by **ALL** of the following:
 
-1. **Environment**: `CONVERGE_CODEX_ENABLED=true` must be set
+1. **Environment**: `CONVERGE_CODING_AGENT_EXEC_ENABLED=true` must be set
 2. **Task flag**: Explicit `--allow-exec` or equivalent flag in task/CLI
 3. **Repository safety checks**:
    - Repository exists and has `.git` directory

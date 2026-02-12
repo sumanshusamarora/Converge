@@ -10,6 +10,7 @@ from converge.orchestration.coordinator import Coordinator
 from converge.orchestration.graph import (
     build_coordinate_graph_conditional,
     build_coordinate_graph_interrupt,
+    collect_constraints_node,
 )
 from converge.orchestration.state import OrchestrationState
 
@@ -215,7 +216,7 @@ def test_handoff_pack_structure_created(
     # Check required files exist in each repo plan
     for plan_dir in [api_plan_dir, web_plan_dir]:
         assert (plan_dir / "plan.md").exists()
-        assert (plan_dir / "copilot-prompt.txt").exists()
+        assert (plan_dir / "agent-prompt.txt").exists()
         assert (plan_dir / "commands.sh").exists()
 
     # Verify content of plan.md
@@ -223,8 +224,8 @@ def test_handoff_pack_structure_created(
     assert "Add discount code support" in api_plan_md
     assert "copilot" in api_plan_md.lower()
 
-    # Verify copilot-prompt.txt has content
-    api_prompt = (api_plan_dir / "copilot-prompt.txt").read_text()
+    # Verify agent-prompt.txt has content
+    api_prompt = (api_plan_dir / "agent-prompt.txt").read_text()
     assert len(api_prompt) > 0
     assert "Add discount code support" in api_prompt or "Copilot" in api_prompt
 
@@ -232,3 +233,70 @@ def test_handoff_pack_structure_created(
     api_commands = (api_plan_dir / "commands.sh").read_text()
     assert "#!/bin/bash" in api_commands
     assert "pytest" in api_commands or "npm" in api_commands  # Python or Node commands
+
+
+def test_contract_drift_triggers_hitl_and_writes_contract_artifacts(tmp_path: Path) -> None:
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+
+    (repo_a / "openapi.yaml").write_text(
+        "openapi: 3.0.0\npaths:\n  /api/users:\n    get:\n      responses:\n        '200': {}\n",
+        encoding="utf-8",
+    )
+    (repo_b / "openapi.yaml").write_text(
+        "openapi: 3.0.0\npaths:\n  /api/users/{id}:\n    get:\n"
+        "      responses:\n        '200': {}\n",
+        encoding="utf-8",
+    )
+
+    config = ConvergeConfig(
+        goal="Align contracts across repos",
+        repos=[str(repo_a), str(repo_b)],
+        max_rounds=1,
+        output_dir=str(tmp_path / ".converge"),
+        no_llm=True,
+        hil_mode="conditional",
+    )
+
+    coordinator = Coordinator(config)
+    final_state = coordinator.coordinate()
+
+    assert final_state["status"] == "HITL_REQUIRED"
+    contract_analysis = final_state.get("contract_analysis", {})
+    issues = contract_analysis.get("issues", [])
+    assert issues
+    assert any("Contract artifact drift detected" in issue for issue in issues)
+
+    run_dir = coordinator.run_dir
+    assert (run_dir / "contract-map.json").exists()
+    assert (run_dir / "contract-checks.md").exists()
+    checks_content = (run_dir / "contract-checks.md").read_text(encoding="utf-8")
+    assert "Issues:" in checks_content
+
+
+def test_collect_constraints_infers_python_for_nested_source_repo(tmp_path: Path) -> None:
+    package_dir = tmp_path / "src" / "converge"
+    package_dir.mkdir(parents=True)
+    (package_dir / "main.py").write_text("print('ok')\n", encoding="utf-8")
+
+    state: OrchestrationState = {
+        "repos": [
+            {
+                "path": str(package_dir),
+                "exists": False,
+                "repo_type": "unknown",
+                "signals": [],
+                "constraints": [],
+            }
+        ],
+        "events": [],
+    }
+
+    result = collect_constraints_node(state)
+    repo = result["repos"][0]
+
+    assert repo["repo_type"] == "python"
+    assert "python_sources" in repo["signals"]
+    assert any("fallback scan" in message for message in repo["constraints"])
