@@ -57,3 +57,9 @@ class OrchestrationState(TypedDict, total=False):
     contract_analysis: dict[str, Any]
     agent_provider: str
     hitl_resolution: dict[str, Any] | None
+    project_id: str | None
+    project_name: str | None
+    project_preferences: dict[str, Any]
+    project_instructions: str | None
+    custom_instructions: str | None
+    execute_immediately: bool

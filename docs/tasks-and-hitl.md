@@ -1,5 +1,11 @@
 # Tasks and HITL
 
+## Project and task model
+
+- Every task belongs to a project (`project_id`).
+- Projects define planning/HITL defaults (for example blocker-only HITL and max HITL questions).
+- If no `project_id` is provided, Converge uses the default project.
+
 ## Task lifecycle
 
 `PENDING -> CLAIMED -> RUNNING -> (SUCCEEDED | HITL_REQUIRED | FAILED | CANCELLED)`
@@ -15,6 +21,12 @@ HITL can be triggered when:
 - proposal is ambiguous
 - provider reports `HITL_REQUIRED`
 - contract alignment detects cross-repository drift or unresolved contract references
+- project HITL policy allows/escalates blocker questions
+
+Converge now applies project HITL normalization before final status:
+- deduplicates repeated questions across repos
+- applies project mode (`blockers_only` vs `strict`)
+- caps question count by project `max_hitl_questions`
 
 Stored fields:
 - `hitl_questions_json` (question list)
@@ -25,6 +37,12 @@ Resolve flow:
 2. client resolves with `POST /api/tasks/{task_id}/resolve`
 3. queue transitions task back to `PENDING`
 4. worker picks it up on next poll and continues run with resolution payload
+
+Follow-up flow with custom instructions:
+1. review plan/artifacts for task `T`
+2. submit `POST /api/tasks/{T}/followup` with `{ instruction, execute_immediately }`
+3. Converge creates a new task under the same project and carries the custom instruction into planning prompts
+4. if project `execution_flow=plan_then_execute`, `execute_immediately=true` is rejected
 
 ## Human input contract
 

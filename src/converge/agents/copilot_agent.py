@@ -72,7 +72,9 @@ class GitHubCopilotAgent(CodingAgent):
         )
 
         # If we have questions, mark as HITL_REQUIRED
-        status: Literal["OK", "HITL_REQUIRED", "FAILED"] = "HITL_REQUIRED" if questions else "OK"
+        status: Literal["OK", "HITL_REQUIRED", "FAILED"] = (
+            "HITL_REQUIRED" if questions else "OK"
+        )
 
         raw_data: dict[str, object] = {
             "copilot_prompt": prompt,
@@ -151,7 +153,10 @@ Keep proposals minimal and surgical. Prefer existing patterns.
         changes = []
 
         # Heuristic based on signals
-        if "pyproject.toml" in task.repo.signals or "requirements.txt" in task.repo.signals:
+        if (
+            "pyproject.toml" in task.repo.signals
+            or "requirements.txt" in task.repo.signals
+        ):
             changes.append("Review and update Python modules as needed")
             changes.append("Add tests for new Python functionality")
         elif "package.json" in task.repo.signals:
@@ -181,6 +186,8 @@ Keep proposals minimal and surgical. Prefer existing patterns.
 
         # Only mark as question if we truly can't determine type
         if not task.repo.signals and not task.repo.kind:
-            questions.append("No technology signals or type detected; manual inspection needed")
+            questions.append(
+                "No technology signals or type detected; manual inspection needed"
+            )
 
         return questions

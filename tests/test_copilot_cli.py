@@ -173,7 +173,9 @@ def test_run_plan_copilot_not_available(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=False),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=False
+        ),
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")
 
@@ -194,7 +196,9 @@ def test_run_plan_prompt_read_error(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=True),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=True
+        ),
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")
 
@@ -221,7 +225,9 @@ def test_run_plan_success(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=True),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=True
+        ),
         patch("subprocess.run", return_value=mock_process) as mock_run,
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")
@@ -233,7 +239,14 @@ def test_run_plan_success(tmp_path: Path) -> None:
     # Verify subprocess was called correctly
     mock_run.assert_called_once()
     call_args = mock_run.call_args
-    assert call_args[0][0] == ["gh", "copilot", "suggest", "-t", "shell", "Fix the bug in main.py"]
+    assert call_args[0][0] == [
+        "gh",
+        "copilot",
+        "suggest",
+        "-t",
+        "shell",
+        "Fix the bug in main.py",
+    ]
     assert call_args[1]["cwd"] == repo_path
 
 
@@ -255,7 +268,9 @@ def test_run_plan_failure(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=True),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=True
+        ),
         patch("subprocess.run", return_value=mock_process),
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")
@@ -280,7 +295,9 @@ def test_run_plan_timeout(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=True),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=True
+        ),
         patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gh", 300)),
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")
@@ -305,7 +322,9 @@ def test_run_plan_exception(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=True),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=True
+        ),
         patch("subprocess.run", side_effect=Exception("Unexpected error")),
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")
@@ -334,7 +353,9 @@ def test_run_plan_creates_artifacts_directory(tmp_path: Path) -> None:
     with (
         patch("converge.execution.copilot_cli.is_tty", return_value=True),
         patch("converge.execution.copilot_cli.check_gh_available", return_value=True),
-        patch("converge.execution.copilot_cli.check_copilot_available", return_value=True),
+        patch(
+            "converge.execution.copilot_cli.check_copilot_available", return_value=True
+        ),
         patch("subprocess.run", return_value=mock_process),
     ):
         result = executor.run_plan(repo_path, prompt_path, artifacts_dir, "owner/repo")

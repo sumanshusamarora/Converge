@@ -166,7 +166,11 @@ class CodexAgent(CodingAgent):
             proposed_changes=[
                 "Safety checks passed",
                 f"Repository verified at {repo_path}",
-                f"Branch created: {branch_created}" if branch_created else "No branch created",
+                (
+                    f"Branch created: {branch_created}"
+                    if branch_created
+                    else "No branch created"
+                ),
             ],
             questions_for_hitl=[
                 "Codex CLI execution interface not yet implemented",
@@ -298,7 +302,9 @@ class CodexAgent(CodingAgent):
         model_candidates = self._candidate_codex_models()
 
         planning_mode: Literal["codex_cli", "heuristic"] = (
-            "codex_cli" if should_attempt_codex_plan and codex_cli_found else "heuristic"
+            "codex_cli"
+            if should_attempt_codex_plan and codex_cli_found
+            else "heuristic"
         )
 
         return {
@@ -355,7 +361,9 @@ Kind: {task.repo.kind or "unknown"}
 ## Task
 Analyze the repository and propose a plan to achieve the goal.
 List high-level changes needed (no code diffs required).
-Identify any risks or questions requiring human judgment.
+Identify risks.
+Ask HITL questions only for true blockers where no safe/default path exists.
+Prefer 0-2 blocker questions; avoid broad product-strategy questions.
 """
         return prompt
 
@@ -396,17 +404,23 @@ Identify any risks or questions requiring human judgment.
             proposed_changes.append("Add or modify JavaScript/TypeScript modules")
             proposed_changes.append("Update tests for new/modified functionality")
         else:
-            proposed_changes.append("Review repository structure and add necessary files")
+            proposed_changes.append(
+                "Review repository structure and add necessary files"
+            )
             # Only mark as question if we truly can't determine type
             if not task.repo.signals:
                 questions.append("Repository type unclear; manual analysis required")
 
         if not Path(task.repo.path).exists():
-            questions.append(f"Repository path {task.repo.path} not found; cannot analyze")
+            questions.append(
+                f"Repository path {task.repo.path} not found; cannot analyze"
+            )
 
         # README missing is informational, not a blocker for heuristic planning
         # (only mark as HITL_REQUIRED if we have real blockers)
-        status: Literal["OK", "HITL_REQUIRED", "FAILED"] = "HITL_REQUIRED" if questions else "OK"
+        status: Literal["OK", "HITL_REQUIRED", "FAILED"] = (
+            "HITL_REQUIRED" if questions else "OK"
+        )
 
         summary = f"Heuristic plan for {task.repo.kind or 'unknown'} repository at {task.repo.path}"
 
@@ -453,14 +467,18 @@ Identify any risks or questions requiring human judgment.
 
         model_candidates = self._candidate_codex_models()
         if not model_candidates:
-            logger.warning("No Codex model candidates available; falling back to heuristic")
+            logger.warning(
+                "No Codex model candidates available; falling back to heuristic"
+            )
             return None
 
         with tempfile.TemporaryDirectory(prefix="converge_codex_plan_") as temp_dir:
             temp_dir_path = Path(temp_dir)
             schema_path = temp_dir_path / "plan_schema.json"
             output_path = temp_dir_path / "codex_plan.json"
-            schema_path.write_text(json.dumps(self._plan_output_schema()), encoding="utf-8")
+            schema_path.write_text(
+                json.dumps(self._plan_output_schema()), encoding="utf-8"
+            )
 
             had_model_access_error = False
             for codex_model in model_candidates:
@@ -492,7 +510,9 @@ Identify any risks or questions requiring human judgment.
                         check=False,
                     )
                 except subprocess.TimeoutExpired:
-                    logger.warning("Codex planning timed out; falling back to heuristic")
+                    logger.warning(
+                        "Codex planning timed out; falling back to heuristic"
+                    )
                     return None
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Codex planning invocation failed: %s", exc)
@@ -529,7 +549,9 @@ Identify any risks or questions requiring human judgment.
                 content = output_path.read_text(encoding="utf-8").strip()
                 parsed = self._parse_plan_payload(content)
                 if parsed is None:
-                    logger.warning("Codex planning output parse failed; falling back to heuristic")
+                    logger.warning(
+                        "Codex planning output parse failed; falling back to heuristic"
+                    )
                     return None
 
                 self._resolved_codex_model = codex_model
@@ -593,7 +615,9 @@ Identify any risks or questions requiring human judgment.
             (mode, source) where mode is one of: auto, force, disable
             and source is one of: configured, default
         """
-        configured_mode = os.getenv("CONVERGE_CODING_AGENT_PLAN_MODE", "").strip().lower()
+        configured_mode = (
+            os.getenv("CONVERGE_CODING_AGENT_PLAN_MODE", "").strip().lower()
+        )
         if configured_mode:
             if configured_mode in _VALID_PLAN_MODES:
                 return configured_mode, "configured"
@@ -635,7 +659,9 @@ Identify any risks or questions requiring human judgment.
     ) -> list[str]:
         recommendations: list[str] = []
         if not codex_cli_found:
-            recommendations.append("Install Codex CLI with: converge install-codex-cli --run")
+            recommendations.append(
+                "Install Codex CLI with: converge install-codex-cli --run"
+            )
         elif plan_mode == _PLAN_MODE_DISABLE:
             recommendations.append(
                 "Set CONVERGE_CODING_AGENT_PLAN_MODE=auto to re-enable Codex planning"
@@ -653,7 +679,9 @@ Identify any risks or questions requiring human judgment.
 
         candidates_env = os.getenv("CONVERGE_CODING_AGENT_MODEL_CANDIDATES", "").strip()
         if candidates_env:
-            base_candidates = [c.strip() for c in candidates_env.split(",") if c.strip()]
+            base_candidates = [
+                c.strip() for c in candidates_env.split(",") if c.strip()
+            ]
         else:
             base_candidates = list(_DEFAULT_CODEX_MODEL_CANDIDATES)
 
@@ -661,7 +689,10 @@ Identify any risks or questions requiring human judgment.
         if self._resolved_codex_model:
             ordered.append(self._resolved_codex_model)
         for candidate in base_candidates:
-            if candidate not in ordered and candidate not in self._unavailable_codex_models:
+            if (
+                candidate not in ordered
+                and candidate not in self._unavailable_codex_models
+            ):
                 ordered.append(candidate)
         return ordered
 
@@ -681,7 +712,11 @@ Identify any risks or questions requiring human judgment.
 
     def _codex_login_status(self, codex_binary: str | None) -> dict[str, object]:
         if codex_binary is None:
-            return {"checked": False, "authenticated": None, "reason": "codex_cli_not_found"}
+            return {
+                "checked": False,
+                "authenticated": None,
+                "reason": "codex_cli_not_found",
+            }
 
         try:
             result = subprocess.run(
@@ -747,9 +782,13 @@ Identify any risks or questions requiring human judgment.
 
         return {
             "summary": summary,
-            "proposed_changes": [str(change) for change in proposed_changes if str(change).strip()],
+            "proposed_changes": [
+                str(change) for change in proposed_changes if str(change).strip()
+            ],
             "questions_for_hitl": [
-                str(question) for question in questions_for_hitl if str(question).strip()
+                str(question)
+                for question in questions_for_hitl
+                if str(question).strip()
             ],
         }
 

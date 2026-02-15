@@ -18,7 +18,9 @@ _MAX_ERROR_LENGTH = 500
 class PollingWorker:
     """Worker that polls a task queue and executes task runs."""
 
-    def __init__(self, queue: TaskQueue, poll_interval_seconds: float, batch_size: int) -> None:
+    def __init__(
+        self, queue: TaskQueue, poll_interval_seconds: float, batch_size: int
+    ) -> None:
         self._queue = queue
         self._poll_interval_seconds = poll_interval_seconds
         self._batch_size = batch_size
@@ -32,6 +34,7 @@ class PollingWorker:
 
                 # Check if task has HITL resolution (resumed from HITL_REQUIRED)
                 hitl_resolution = self._queue.get_hitl_resolution(task.id)
+                project = self._queue.get_project(task.project_id)
 
                 outcome = run_coordinate(
                     goal=task.request.goal,
@@ -41,10 +44,18 @@ class PollingWorker:
                     base_output_dir=Path(".converge"),
                     hitl_resolution=hitl_resolution,
                     thread_id=task.id,
+                    project_id=project.id,
+                    project_name=project.name,
+                    project_preferences=project.preferences.model_dump(),
+                    project_instructions=project.default_instructions,
+                    custom_instructions=task.request.custom_instructions,
+                    execute_immediately=task.request.execute_immediately,
                 )
 
                 if outcome.status == "FAILED":
-                    self._queue.fail(task.id, outcome.summary[:_MAX_ERROR_LENGTH], retryable=True)
+                    self._queue.fail(
+                        task.id, outcome.summary[:_MAX_ERROR_LENGTH], retryable=True
+                    )
                     continue
 
                 result_status = (

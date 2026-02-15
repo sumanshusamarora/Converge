@@ -23,7 +23,12 @@ except ImportError:  # pragma: no cover - used in offline/test fallback environm
 from converge.agents.base import AgentTask, RepoContext
 from converge.agents.factory import create_agent
 from converge.llm.openai_client import OpenAIClient, heuristic_proposal
-from converge.orchestration.state import EventRecord, OrchestrationState, RepoPlan, RepositorySignal
+from converge.orchestration.state import (
+    EventRecord,
+    OrchestrationState,
+    RepoPlan,
+    RepositorySignal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,90 @@ _MAX_FILE_BYTES = 1_000_000
 
 def _record_event(node: str, message: str) -> EventRecord:
     return {"node": node, "message": message}
+
+
+def _project_preference(state: OrchestrationState, key: str, default: Any) -> Any:
+    preferences = state.get("project_preferences", {})
+    if not isinstance(preferences, dict):
+        return default
+    return preferences.get(key, default)
+
+
+def _is_blocker_question(question: str) -> bool:
+    lowered = question.lower()
+    blocker_markers = (
+        "blocker",
+        "blocked",
+        "cannot",
+        "can't",
+        "must",
+        "required",
+        "security",
+        "compliance",
+        "breaking",
+        "no clear path",
+        "unclear ownership",
+        "unsafe",
+        "risk",
+    )
+    return any(marker in lowered for marker in blocker_markers)
+
+
+def _apply_hitl_policy(state: OrchestrationState) -> None:
+    """Normalize HITL questions based on project preferences.
+
+    Rules:
+    - Deduplicate identical questions across all repos
+    - In blockers_only mode, drop non-blocker questions
+    - Cap retained questions by max_hitl_questions
+    """
+    repo_plans = state.get("repo_plans", [])
+    if not repo_plans:
+        return
+
+    hitl_trigger_mode = str(
+        _project_preference(state, "hitl_trigger_mode", "blockers_only")
+    )
+    max_questions_raw = _project_preference(state, "max_hitl_questions", 2)
+    try:
+        max_questions = max(0, int(max_questions_raw))
+    except (TypeError, ValueError):
+        max_questions = 2
+
+    seen: set[str] = set()
+    consumed = 0
+    for plan in repo_plans:
+        original_questions = plan.get("questions_for_hitl", [])
+        normalized: list[str] = []
+        for item in original_questions:
+            question = str(item).strip()
+            if not question:
+                continue
+            dedupe_key = question.lower()
+            if dedupe_key in seen:
+                continue
+            if hitl_trigger_mode == "blockers_only" and not _is_blocker_question(
+                question
+            ):
+                continue
+            if consumed >= max_questions:
+                break
+            seen.add(dedupe_key)
+            normalized.append(question)
+            consumed += 1
+        plan["questions_for_hitl"] = normalized
+        if plan["status"] == "HITL_REQUIRED" and not normalized:
+            plan["status"] = "OK"
+
+    state["events"].append(
+        _record_event(
+            "hitl_policy_node",
+            (
+                "hitl questions normalized: "
+                f"mode={hitl_trigger_mode}, kept={consumed}, max={max_questions}"
+            ),
+        )
+    )
 
 
 def _iter_repo_files(repo_path: Path) -> list[Path]:
@@ -231,7 +320,9 @@ def _extract_graphql_symbols(text: str) -> set[str]:
     symbols: set[str] = set()
     for match in re.finditer(r"\btype\s+([A-Za-z0-9_]+)\s*{", text):
         symbols.add(f"graphql:type:{match.group(1)}")
-    for match in re.finditer(r"\b(query|mutation|subscription)\s+([A-Za-z0-9_]+)", text):
+    for match in re.finditer(
+        r"\b(query|mutation|subscription)\s+([A-Za-z0-9_]+)", text
+    ):
         symbols.add(f"graphql:operation:{match.group(2)}")
     return symbols
 
@@ -270,7 +361,11 @@ def _extract_declared_contract_ids(path: Path, text: str) -> set[str]:
         ids.update(_extract_proto_symbols(text))
     elif suffix in {".graphql", ".gql"}:
         ids.update(_extract_graphql_symbols(text))
-    elif suffix == ".avsc" or name.endswith(".schema.json") or name.endswith(".jsonschema.json"):
+    elif (
+        suffix == ".avsc"
+        or name.endswith(".schema.json")
+        or name.endswith(".jsonschema.json")
+    ):
         ids.update(_extract_schema_symbols(path, text))
 
     ids.add(f"contract:file:{name}")
@@ -285,7 +380,9 @@ def _extract_consumed_contract_refs(path: Path, text: str) -> set[str]:
     for match in re.finditer(r"""['"](/api/[A-Za-z0-9_./\-{}:]+)['"]""", text):
         refs.add(f"http:path:{_normalize_path(match.group(1))}")
 
-    for match in re.finditer(r"\b(query|mutation|subscription)\s+([A-Za-z0-9_]+)", text):
+    for match in re.finditer(
+        r"\b(query|mutation|subscription)\s+([A-Za-z0-9_]+)", text
+    ):
         refs.add(f"graphql:operation:{match.group(2)}")
 
     return refs
@@ -370,7 +467,9 @@ def _analyze_contract_alignment(state: OrchestrationState) -> dict[str, Any]:
     if provided_http_paths:
         for repo_path, ref in consumed_http_refs:
             if ref not in provided_http_paths:
-                issues.append(f"{repo_path} consumes undefined API path contract: {ref}")
+                issues.append(
+                    f"{repo_path} consumes undefined API path contract: {ref}"
+                )
 
     if provided_graphql_symbols:
         for repo_path, ref in consumed_graphql_refs:
@@ -419,7 +518,12 @@ def collect_constraints_node(state: OrchestrationState) -> OrchestrationState:
         if not exists:
             constraints.append("repo path not found")
         else:
-            signal_files = ["pyproject.toml", "requirements.txt", "package.json", "README.md"]
+            signal_files = [
+                "pyproject.toml",
+                "requirements.txt",
+                "package.json",
+                "README.md",
+            ]
             signals = [signal for signal in signal_files if (path / signal).exists()]
             if "pyproject.toml" in signals or "requirements.txt" in signals:
                 repo_type = "python"
@@ -428,7 +532,9 @@ def collect_constraints_node(state: OrchestrationState) -> OrchestrationState:
                 repo_type = "node"
                 constraints.append("Node project detected")
             else:
-                inferred_repo_type, inferred_signal = _infer_repo_type_from_sources(path)
+                inferred_repo_type, inferred_signal = _infer_repo_type_from_sources(
+                    path
+                )
                 if inferred_repo_type != "unknown":
                     repo_type = inferred_repo_type
                     if inferred_signal and inferred_signal not in signals:
@@ -452,23 +558,45 @@ def collect_constraints_node(state: OrchestrationState) -> OrchestrationState:
         )
 
     state["repos"] = repos
-    state["events"].append(_record_event("collect_constraints_node", "constraints collected"))
+    state["events"].append(
+        _record_event("collect_constraints_node", "constraints collected")
+    )
     return state
 
 
 def propose_split_node(state: OrchestrationState) -> OrchestrationState:
     """Propose responsibility split using OpenAI or fallback heuristic."""
     repo_summaries: list[dict[str, Any]] = [
-        {"path": repo["path"], "repo_type": repo["repo_type"], "signals": repo["signals"]}
+        {
+            "path": repo["path"],
+            "repo_type": repo["repo_type"],
+            "signals": repo["signals"],
+        }
         for repo in state["repos"]
     ]
 
+    planning_context = {
+        "project_id": state.get("project_id"),
+        "project_name": state.get("project_name"),
+        "project_preferences": state.get("project_preferences", {}),
+        "project_instructions": state.get("project_instructions"),
+        "custom_instructions": state.get("custom_instructions"),
+    }
+
     if state["no_llm"]:
-        proposal = heuristic_proposal(state["goal"], repo_summaries)
-        proposal["questions_for_hitl"].append("LLM disabled by --no-llm; using heuristic proposal")
+        proposal = heuristic_proposal(
+            state["goal"],
+            repo_summaries,
+            planning_context=planning_context,
+        )
+        proposal["questions_for_hitl"].append(
+            "LLM disabled by --no-llm; using heuristic proposal"
+        )
     else:
         proposal = OpenAIClient(model=state["model"]).propose_responsibility_split(
-            state["goal"], repo_summaries
+            state["goal"],
+            repo_summaries,
+            planning_context=planning_context,
         )
 
     state["proposal"] = proposal
@@ -491,7 +619,46 @@ def agent_plan_node(state: OrchestrationState) -> OrchestrationState:
     if agents_md_path.exists():
         instructions = agents_md_path.read_text(encoding="utf-8")
     else:
-        instructions = "Follow Converge best practices: minimal changes, clear ownership."
+        instructions = (
+            "Follow Converge best practices: minimal changes, clear ownership."
+        )
+
+    project_name = state.get("project_name") or "Default Project"
+    project_preferences = state.get("project_preferences", {})
+    project_instructions = state.get("project_instructions")
+    custom_instructions = state.get("custom_instructions")
+    max_hitl_questions = _project_preference(state, "max_hitl_questions", 2)
+    hitl_trigger_mode = _project_preference(state, "hitl_trigger_mode", "blockers_only")
+    planning_strategy = _project_preference(
+        state, "planning_strategy", "extend_existing"
+    )
+
+    context_lines = [
+        "",
+        "## Project Coordination Context",
+        f"Project: {project_name}",
+        f"Planning strategy: {planning_strategy}",
+        f"HITL mode: {hitl_trigger_mode}",
+        f"Max HITL questions: {max_hitl_questions}",
+        (
+            "HITL policy: only ask blocker-level questions when there is no clear safe path; "
+            "otherwise choose sensible defaults and continue."
+        ),
+        (
+            "Question quality bar: if you ask a HITL question, it must be directly actionable "
+            "and required to proceed."
+        ),
+    ]
+    if isinstance(project_preferences, dict) and project_preferences:
+        context_lines.append(
+            f"Project preferences: {json.dumps(project_preferences, sort_keys=True)}"
+        )
+    if isinstance(project_instructions, str) and project_instructions.strip():
+        context_lines.extend(["Project instructions:", project_instructions.strip()])
+    if isinstance(custom_instructions, str) and custom_instructions.strip():
+        context_lines.extend(["Task custom instructions:", custom_instructions.strip()])
+
+    merged_instructions = "\n".join([instructions, *context_lines])
 
     repo_plans: list[RepoPlan] = []
 
@@ -504,7 +671,9 @@ def agent_plan_node(state: OrchestrationState) -> OrchestrationState:
         if readme_path.exists():
             readme_content = readme_path.read_text(encoding="utf-8")
             # Take first 500 chars as excerpt
-            readme_excerpt = readme_content[:500] if len(readme_content) > 500 else readme_content
+            readme_excerpt = (
+                readme_content[:500] if len(readme_content) > 500 else readme_content
+            )
 
         repo_context = RepoContext(
             path=repo_path,
@@ -517,7 +686,7 @@ def agent_plan_node(state: OrchestrationState) -> OrchestrationState:
         task = AgentTask(
             goal=state["goal"],
             repo=repo_context,
-            instructions=instructions,
+            instructions=merged_instructions,
             max_steps=5,
         )
 
@@ -545,6 +714,7 @@ def agent_plan_node(state: OrchestrationState) -> OrchestrationState:
         )
 
     state["repo_plans"] = repo_plans
+    _apply_hitl_policy(state)
     state["events"].append(
         _record_event("agent_plan_node", f"generated {len(repo_plans)} repo plans")
     )
@@ -555,7 +725,15 @@ def decide_node(state: OrchestrationState) -> OrchestrationState:
     """Apply bounded convergence and decide current status."""
     state["round"] += 1
     missing_repos = any(not repo["exists"] for repo in state["repos"])
-    ambiguous = not state["proposal"].get("proposal")
+    proposal_payload = state.get("proposal", {})
+    if not isinstance(proposal_payload, dict):
+        logger.warning(
+            "Invalid proposal payload type at decide_node: %s", type(proposal_payload)
+        )
+        proposal_payload = {}
+        state["proposal"] = proposal_payload
+    proposal_details = proposal_payload.get("proposal")
+    ambiguous = not isinstance(proposal_details, dict) or not proposal_details
 
     # Check agent plan statuses if available
     agent_hitl_required = False
@@ -592,7 +770,9 @@ def route_after_decide(state: OrchestrationState) -> RouteA:
         destination: RouteA = "propose_split_node"
     else:
         destination = "write_artifacts_node"
-    state["events"].append(_record_event("route_after_decide", f"destination={destination}"))
+    state["events"].append(
+        _record_event("route_after_decide", f"destination={destination}")
+    )
     return destination
 
 
@@ -623,7 +803,9 @@ def hitl_interrupt_node(state: OrchestrationState) -> OrchestrationState:
             "Escalate to architecture/security review",
         ],
     }
-    state["events"].append(_record_event("hitl_interrupt_node", "hitl interrupt requested"))
+    state["events"].append(
+        _record_event("hitl_interrupt_node", "hitl interrupt requested")
+    )
 
     resumed_value = interrupt(payload)
     decision: dict[str, Any]
@@ -635,7 +817,9 @@ def hitl_interrupt_node(state: OrchestrationState) -> OrchestrationState:
         decision = {"action": "unknown"}
 
     state["human_decision"] = decision
-    state["events"].append(_record_event("hitl_decision_received", "human decision recorded"))
+    state["events"].append(
+        _record_event("hitl_decision_received", "human decision recorded")
+    )
     return state
 
 
@@ -643,6 +827,14 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
     """Write run artifacts for human and machine consumption."""
     artifacts_dir = state["artifacts_dir"]
     artifacts_dir.mkdir(parents=True, exist_ok=True)
+    proposal_payload = state.get("proposal", {})
+    if not isinstance(proposal_payload, dict):
+        logger.warning(
+            "Invalid proposal payload type at write_artifacts_node: %s",
+            type(proposal_payload),
+        )
+        proposal_payload = {}
+        state["proposal"] = proposal_payload
 
     summary_lines = [
         "# Coordination Summary",
@@ -706,20 +898,31 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
         [
             "## Proposed Responsibility Split",
             "",
-            f"**Rationale:** {state['proposal'].get('rationale', '')}",
+            f"**Rationale:** {proposal_payload.get('rationale', '')}",
             "",
         ]
     )
-    for risk in state["proposal"].get("risks", []):
+    risks = proposal_payload.get("risks", [])
+    if not isinstance(risks, list):
+        risks = [str(risks)]
+    for risk in risks:
         summary_lines.append(f"- Risk: {risk}")
 
     if state.get("human_decision"):
-        summary_lines.extend(["", "## Human Decision", "", f"- {state['human_decision']}"])
+        summary_lines.extend(
+            ["", "## Human Decision", "", f"- {state['human_decision']}"]
+        )
 
-    (artifacts_dir / "summary.md").write_text("\n".join(summary_lines), encoding="utf-8")
+    (artifacts_dir / "summary.md").write_text(
+        "\n".join(summary_lines), encoding="utf-8"
+    )
 
     matrix_lines = ["# Responsibility Matrix", "", f"**Goal:** {state['goal']}", ""]
-    assignments = state["proposal"].get("proposal", {}).get("assignments", {})
+    proposal_details = proposal_payload.get("proposal", {})
+    if isinstance(proposal_details, dict):
+        assignments = proposal_details.get("assignments", {})
+    else:
+        assignments = {}
     if isinstance(assignments, dict):
         for repo, responsibilities in assignments.items():
             matrix_lines.append(f"## {repo}")
@@ -753,7 +956,9 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
         "repo_plans": state.get("repo_plans", []),
         "contract_analysis": state.get("contract_analysis", {}),
     }
-    (artifacts_dir / "run.json").write_text(json.dumps(run_payload, indent=2), encoding="utf-8")
+    (artifacts_dir / "run.json").write_text(
+        json.dumps(run_payload, indent=2), encoding="utf-8"
+    )
 
     (artifacts_dir / "contract-map.json").write_text(
         json.dumps(contract_analysis, indent=2),
@@ -789,7 +994,9 @@ def write_artifacts_node(state: OrchestrationState) -> OrchestrationState:
                 contract_lines.append(f"  - {artifact.get('path')}")
         contract_lines.append("")
 
-    (artifacts_dir / "contract-checks.md").write_text("\n".join(contract_lines), encoding="utf-8")
+    (artifacts_dir / "contract-checks.md").write_text(
+        "\n".join(contract_lines), encoding="utf-8"
+    )
 
     # Write prompts directory if repo_plans exist (deprecated structure, kept for compatibility)
     if "repo_plans" in state and state["repo_plans"]:
@@ -856,7 +1063,9 @@ Proposed Changes:
                 for question in plan["questions_for_hitl"]:
                     plan_md_lines.append(f"- {question}")
 
-            (repo_plan_dir / "plan.md").write_text("\n".join(plan_md_lines), encoding="utf-8")
+            (repo_plan_dir / "plan.md").write_text(
+                "\n".join(plan_md_lines), encoding="utf-8"
+            )
 
             # 2. Write agent-prompt.txt - provider-neutral handoff prompt
             copilot_prompt = plan.get("raw", {}).get("copilot_prompt", "")
@@ -875,7 +1084,9 @@ Proposed Changes:
                 for change in plan["proposed_changes"]:
                     prompt_content += f"- {change}\n"
 
-            (repo_plan_dir / "agent-prompt.txt").write_text(prompt_content, encoding="utf-8")
+            (repo_plan_dir / "agent-prompt.txt").write_text(
+                prompt_content, encoding="utf-8"
+            )
 
             # 3. Write commands.sh - execution hints (if available)
             commands = []
@@ -916,11 +1127,15 @@ Proposed Changes:
                     ]
                 )
             else:
-                commands.append("# No specific commands detected for this repository type")
+                commands.append(
+                    "# No specific commands detected for this repository type"
+                )
 
             if commands:
                 commands_content = "#!/bin/bash\n" + "\n".join(commands) + "\n"
-                (repo_plan_dir / "commands.sh").write_text(commands_content, encoding="utf-8")
+                (repo_plan_dir / "commands.sh").write_text(
+                    commands_content, encoding="utf-8"
+                )
 
     state["events"].append(_record_event("write_artifacts_node", "artifacts written"))
     return state

@@ -44,7 +44,9 @@ def create_db_checkpointer(database_uri: str | None) -> CheckpointerHandle | Non
     try:
         url = make_url(resolved_database_uri)
     except Exception:
-        logger.warning("Invalid SQLALCHEMY_DATABASE_URI; skipping LangGraph checkpointing")
+        logger.warning(
+            "Invalid SQLALCHEMY_DATABASE_URI; skipping LangGraph checkpointing"
+        )
         return None
 
     backend = url.get_backend_name()
@@ -66,7 +68,10 @@ def create_db_checkpointer(database_uri: str | None) -> CheckpointerHandle | Non
             install_hint="pip install langgraph-checkpoint-sqlite",
         )
 
-    logger.info("No LangGraph DB checkpointer for backend '%s'; using non-persistent flow", backend)
+    logger.info(
+        "No LangGraph DB checkpointer for backend '%s'; using non-persistent flow",
+        backend,
+    )
     return None
 
 

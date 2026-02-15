@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from converge.queue.base import TaskQueue
-from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult
+from converge.queue.schemas import (
+    ProjectCreateRequest,
+    ProjectRecord,
+    ProjectUpdateRequest,
+    TaskRecord,
+    TaskRequest,
+    TaskResult,
+)
 
 
 class RedisTaskQueue(TaskQueue):
@@ -58,3 +65,25 @@ class RedisTaskQueue(TaskQueue):
     def resolve_hitl(self, task_id: str, resolution: dict[str, Any]) -> None:
         """Resolve HITL in Redis."""
         raise NotImplementedError("TODO: implement Redis resolve_hitl")
+
+    def create_project(self, request: ProjectCreateRequest) -> ProjectRecord:
+        """Create project in Redis."""
+        raise NotImplementedError("TODO: implement Redis create_project")
+
+    def list_projects(self) -> list[ProjectRecord]:
+        """List projects from Redis."""
+        raise NotImplementedError("TODO: implement Redis list_projects")
+
+    def get_project(self, project_id: str) -> ProjectRecord:
+        """Get project from Redis."""
+        raise NotImplementedError("TODO: implement Redis get_project")
+
+    def update_project(
+        self, project_id: str, request: ProjectUpdateRequest
+    ) -> ProjectRecord:
+        """Update project in Redis."""
+        raise NotImplementedError("TODO: implement Redis update_project")
+
+    def get_default_project(self) -> ProjectRecord:
+        """Get default project from Redis."""
+        raise NotImplementedError("TODO: implement Redis get_default_project")

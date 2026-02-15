@@ -6,6 +6,8 @@ Converge installs one CLI entrypoint: `converge`.
 
 Purpose: run one coordination workflow directly from CLI.
 
+When DB queue settings are configured (`CONVERGE_QUEUE_BACKEND=db` and `SQLALCHEMY_DATABASE_URI` set), the command also persists a task record and updates its status during execution, so runs appear in the API/UI task list.
+
 Usage:
 
 ```bash
@@ -36,6 +38,11 @@ Artifacts written:
 - `<output-dir>/runs/<timestamp>/contract-checks.md`
 - `<output-dir>/runs/<timestamp>/run.json`
 - optional `<output-dir>/runs/<timestamp>/repo-plans/...`
+
+Task persistence behavior:
+- DB queue configured: task is created and updated (`RUNNING` -> `SUCCEEDED`/`HITL_REQUIRED`/`FAILED`)
+- DB queue missing URI: run still executes, but no task record is persisted
+- when DB queue is configured, task is assigned to a project (default project if none specified)
 
 Example:
 

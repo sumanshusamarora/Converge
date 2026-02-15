@@ -5,7 +5,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult
+from converge.queue.schemas import (
+    ProjectCreateRequest,
+    ProjectRecord,
+    ProjectUpdateRequest,
+    TaskRecord,
+    TaskRequest,
+    TaskResult,
+)
 
 
 class TaskQueue(ABC):
@@ -80,3 +87,25 @@ class TaskQueue(ABC):
         Raises:
             ValueError: If task is not in HITL_REQUIRED status
         """
+
+    @abstractmethod
+    def create_project(self, request: ProjectCreateRequest) -> ProjectRecord:
+        """Create a project with default planning preferences."""
+
+    @abstractmethod
+    def list_projects(self) -> list[ProjectRecord]:
+        """List all projects sorted by creation/update time."""
+
+    @abstractmethod
+    def get_project(self, project_id: str) -> ProjectRecord:
+        """Get a project by id."""
+
+    @abstractmethod
+    def update_project(
+        self, project_id: str, request: ProjectUpdateRequest
+    ) -> ProjectRecord:
+        """Update a project by id."""
+
+    @abstractmethod
+    def get_default_project(self) -> ProjectRecord:
+        """Return the default project used when project_id is omitted."""

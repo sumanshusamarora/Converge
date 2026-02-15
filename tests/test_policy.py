@@ -46,7 +46,9 @@ def test_execution_policy_custom_values() -> None:
 
 def test_is_command_allowed_empty_allowlist() -> None:
     """Test is_command_allowed with empty allowlist."""
-    policy = ExecutionPolicy(mode=ExecutionMode.EXECUTE_ALLOWED, allowlisted_commands=[])
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_ALLOWED, allowlisted_commands=[]
+    )
 
     assert policy.is_command_allowed("pytest") is False
     assert policy.is_command_allowed("ruff check .") is False
@@ -175,7 +177,9 @@ def test_policy_from_env_custom_allowlist() -> None:
     """Test that custom allowlist is passed through to policy."""
     custom_allowlist = ["pytest", "custom-command"]
 
-    policy = policy_from_env_and_request(cli_flags={"allowlisted_commands": custom_allowlist})
+    policy = policy_from_env_and_request(
+        cli_flags={"allowlisted_commands": custom_allowlist}
+    )
 
     assert policy.allowlisted_commands == custom_allowlist
 

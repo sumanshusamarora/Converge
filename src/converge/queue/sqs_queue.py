@@ -5,7 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from converge.queue.base import TaskQueue
-from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult
+from converge.queue.schemas import (
+    ProjectCreateRequest,
+    ProjectRecord,
+    ProjectUpdateRequest,
+    TaskRecord,
+    TaskRequest,
+    TaskResult,
+)
 
 
 class SQSTaskQueue(TaskQueue):
@@ -58,3 +65,25 @@ class SQSTaskQueue(TaskQueue):
     def resolve_hitl(self, task_id: str, resolution: dict[str, Any]) -> None:
         """Resolve HITL in SQS."""
         raise NotImplementedError("TODO: implement SQS resolve_hitl")
+
+    def create_project(self, request: ProjectCreateRequest) -> ProjectRecord:
+        """Create project in SQS."""
+        raise NotImplementedError("TODO: implement SQS create_project")
+
+    def list_projects(self) -> list[ProjectRecord]:
+        """List projects from SQS."""
+        raise NotImplementedError("TODO: implement SQS list_projects")
+
+    def get_project(self, project_id: str) -> ProjectRecord:
+        """Get project from SQS."""
+        raise NotImplementedError("TODO: implement SQS get_project")
+
+    def update_project(
+        self, project_id: str, request: ProjectUpdateRequest
+    ) -> ProjectRecord:
+        """Update project in SQS."""
+        raise NotImplementedError("TODO: implement SQS update_project")
+
+    def get_default_project(self) -> ProjectRecord:
+        """Get default project from SQS."""
+        raise NotImplementedError("TODO: implement SQS get_default_project")

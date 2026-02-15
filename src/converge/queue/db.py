@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    func,
     inspect,
     select,
     text,
@@ -23,7 +24,22 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 
 from converge.core.config import load_queue_settings
 from converge.queue.base import TaskQueue
-from converge.queue.schemas import TaskRecord, TaskRequest, TaskResult, TaskStatus
+from converge.queue.schemas import (
+    ProjectCreateRequest,
+    ProjectPreferences,
+    ProjectRecord,
+    ProjectUpdateRequest,
+    TaskRecord,
+    TaskRequest,
+    TaskResult,
+    TaskStatus,
+)
+
+DEFAULT_PROJECT_ID = "00000000-0000-0000-0000-000000000001"
+DEFAULT_PROJECT_NAME = "Default Project"
+DEFAULT_PROJECT_DESCRIPTION = (
+    "Auto-created project for tasks without explicit project selection."
+)
 
 
 class Base(DeclarativeBase):
@@ -35,16 +51,21 @@ class TaskRow(Base):
 
     __tablename__ = "tasks"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     request_json: Mapped[str] = mapped_column(Text, nullable=False)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     artifacts_dir: Mapped[str | None] = mapped_column(Text, nullable=True)
-    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -58,6 +79,26 @@ class TaskRow(Base):
     resolution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ProjectRow(Base):
+    """Persistent project row for project-level preferences and defaults."""
+
+    __tablename__ = "projects"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True
+    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    default_repos_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    default_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preferences_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class DatabaseTaskQueue(TaskQueue):
     """Database queue implementation for SQLite and PostgreSQL."""
 
@@ -68,6 +109,7 @@ class DatabaseTaskQueue(TaskQueue):
         self._max_attempts = load_queue_settings().worker_max_attempts
         Base.metadata.create_all(self._engine)
         self._ensure_schema_extensions()
+        self._ensure_default_project()
 
     def enqueue(self, request: TaskRequest) -> TaskRecord:
         """Enqueue a new pending task."""
@@ -78,14 +120,23 @@ class DatabaseTaskQueue(TaskQueue):
     ) -> TaskRecord:
         """Enqueue a task and return existing record when dedupe key already exists."""
         now = self._now()
-        dedupe_key = self._build_dedupe_key(source=source, idempotency_key=idempotency_key)
+        dedupe_key = self._build_dedupe_key(
+            source=source, idempotency_key=idempotency_key
+        )
+        project = (
+            self.get_project(request.project_id)
+            if request.project_id
+            else self.get_default_project()
+        )
+        normalized_request = request.model_copy(update={"project_id": project.id})
         task_row = TaskRow(
             id=str(uuid4()),
+            project_id=project.id,
             status=TaskStatus.PENDING.value,
             created_at=now,
             updated_at=now,
             attempts=0,
-            request_json=request.model_dump_json(),
+            request_json=normalized_request.model_dump_json(),
             last_error=None,
             artifacts_dir=None,
             claimed_at=None,
@@ -111,11 +162,15 @@ class DatabaseTaskQueue(TaskQueue):
         self, source: str | None, idempotency_key: str | None
     ) -> TaskRecord | None:
         """Find a task by source/idempotency key pair."""
-        dedupe_key = self._build_dedupe_key(source=source, idempotency_key=idempotency_key)
+        dedupe_key = self._build_dedupe_key(
+            source=source, idempotency_key=idempotency_key
+        )
         if dedupe_key is None:
             return None
         with self._session_factory() as session:
-            row = session.scalar(select(TaskRow).where(TaskRow.dedupe_key == dedupe_key))
+            row = session.scalar(
+                select(TaskRow).where(TaskRow.dedupe_key == dedupe_key)
+            )
             if row is None:
                 return None
             return self._to_record(row)
@@ -223,23 +278,44 @@ class DatabaseTaskQueue(TaskQueue):
             session.commit()
 
     def list_tasks(
-        self, status_filter: TaskStatus | None = None, limit: int = 100, offset: int = 0
+        self,
+        status_filter: TaskStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        project_id: str | None = None,
     ) -> list[TaskRecord]:
         """List tasks with optional status filter and pagination."""
         with self._session_factory() as session:
             query = select(TaskRow).order_by(TaskRow.created_at.desc())
             if status_filter is not None:
                 query = query.where(TaskRow.status == status_filter.value)
+            if project_id:
+                query = query.where(TaskRow.project_id == project_id)
             query = query.limit(limit).offset(offset)
             rows = session.scalars(query).all()
             return [self._to_record(row) for row in rows]
+
+    def count_tasks(
+        self, status_filter: TaskStatus | None = None, project_id: str | None = None
+    ) -> int:
+        """Count tasks with optional status filter."""
+        with self._session_factory() as session:
+            query = select(func.count(TaskRow.id))
+            if status_filter is not None:
+                query = query.where(TaskRow.status == status_filter.value)
+            if project_id:
+                query = query.where(TaskRow.project_id == project_id)
+            count = session.scalar(query)
+            return int(count or 0)
 
     def cancel(self, task_id: str) -> None:
         """Cancel a task."""
         with self._session_factory() as session:
             row = self._get_row(session, task_id)
             if row.status in {TaskStatus.SUCCEEDED.value, TaskStatus.FAILED.value}:
-                raise ValueError(f"Cannot cancel task {task_id} with status {row.status}")
+                raise ValueError(
+                    f"Cannot cancel task {task_id} with status {row.status}"
+                )
             row.status = TaskStatus.CANCELLED.value
             row.updated_at = self._now()
             session.commit()
@@ -254,14 +330,20 @@ class DatabaseTaskQueue(TaskQueue):
         hitl_questions: list[str] = []
         if row.hitl_questions_json:
             hitl_questions = cast(list[str], json.loads(row.hitl_questions_json))
+        task_request = TaskRequest.model_validate(json.loads(row.request_json))
+        if task_request.project_id is None:
+            task_request = task_request.model_copy(
+                update={"project_id": row.project_id}
+            )
 
         return TaskRecord(
             id=row.id,
+            project_id=row.project_id,
             status=TaskStatus(row.status),
             created_at=row.created_at,
             updated_at=row.updated_at,
             attempts=row.attempts,
-            request=TaskRequest.model_validate(json.loads(row.request_json)),
+            request=task_request,
             last_error=row.last_error,
             artifacts_dir=row.artifacts_dir,
             source=row.source,
@@ -271,7 +353,9 @@ class DatabaseTaskQueue(TaskQueue):
             resolution_json=row.resolution_json,
         )
 
-    def _build_dedupe_key(self, source: str | None, idempotency_key: str | None) -> str | None:
+    def _build_dedupe_key(
+        self, source: str | None, idempotency_key: str | None
+    ) -> str | None:
         if not source or not idempotency_key:
             return None
         return f"{source}:{idempotency_key}"
@@ -282,6 +366,7 @@ class DatabaseTaskQueue(TaskQueue):
         extension checks for existing deployments.
         """
         add_specs: dict[str, str] = {
+            "project_id": "TEXT",
             "source": "TEXT",
             "source_event_id": "TEXT",
             "idempotency_key": "TEXT",
@@ -297,19 +382,195 @@ class DatabaseTaskQueue(TaskQueue):
             for column_name, column_sql_type in add_specs.items():
                 if column_name not in columns:
                     conn.execute(
-                        text(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_sql_type}")
+                        text(
+                            f"ALTER TABLE tasks ADD COLUMN {column_name} {column_sql_type}"
+                        )
                     )
+            conn.execute(
+                text(
+                    "CREATE TABLE IF NOT EXISTS projects ("
+                    "id TEXT PRIMARY KEY,"
+                    "name TEXT NOT NULL,"
+                    "description TEXT,"
+                    "default_repos_json TEXT NOT NULL,"
+                    "default_instructions TEXT,"
+                    "preferences_json TEXT NOT NULL,"
+                    "created_at DATETIME NOT NULL,"
+                    "updated_at DATETIME NOT NULL"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "idx_projects_name_unique ON projects(name)"
+                )
+            )
             conn.execute(
                 text(
                     "CREATE UNIQUE INDEX IF NOT EXISTS "
                     "idx_tasks_source_dedupe_key_unique ON tasks(dedupe_key)"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "idx_tasks_project_id ON tasks(project_id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO projects "
+                    "(id, name, description, default_repos_json, default_instructions, "
+                    "preferences_json, created_at, updated_at) "
+                    "VALUES (:id, :name, :description, :default_repos_json, "
+                    ":default_instructions, :preferences_json, :created_at, :updated_at) "
+                    "ON CONFLICT(id) DO NOTHING"
+                ),
+                {
+                    "id": DEFAULT_PROJECT_ID,
+                    "name": DEFAULT_PROJECT_NAME,
+                    "description": DEFAULT_PROJECT_DESCRIPTION,
+                    "default_repos_json": "[]",
+                    "default_instructions": None,
+                    "preferences_json": ProjectPreferences().model_dump_json(),
+                    "created_at": self._now(),
+                    "updated_at": self._now(),
+                },
+            )
+            conn.execute(
+                text(
+                    "UPDATE tasks SET project_id = :project_id "
+                    "WHERE project_id IS NULL OR project_id = ''"
+                ),
+                {"project_id": DEFAULT_PROJECT_ID},
+            )
 
     def _acquire_schema_lock(self, conn: Connection) -> None:
         """Serialize schema extension DDL on Postgres to avoid startup races."""
         if self._dialect_name in {"postgresql", "postgres"}:
-            conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('converge.tasks.schema'))"))
+            conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext('converge.tasks.schema'))")
+            )
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
+
+    def create_project(self, request: ProjectCreateRequest) -> ProjectRecord:
+        """Create a project with preferences and defaults."""
+        now = self._now()
+        row = ProjectRow(
+            id=str(uuid4()),
+            name=request.name.strip(),
+            description=request.description.strip() if request.description else None,
+            default_repos_json=json.dumps(request.default_repos),
+            default_instructions=(
+                request.default_instructions.strip()
+                if request.default_instructions
+                else None
+            ),
+            preferences_json=request.preferences.model_dump_json(),
+            created_at=now,
+            updated_at=now,
+        )
+        with self._session_factory() as session:
+            try:
+                session.add(row)
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise ValueError(
+                    f"Project name already exists: {request.name}"
+                ) from exc
+            return self._to_project_record(row)
+
+    def list_projects(self) -> list[ProjectRecord]:
+        """List all projects."""
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(ProjectRow).order_by(ProjectRow.created_at.asc())
+            ).all()
+            return [self._to_project_record(row) for row in rows]
+
+    def get_project(self, project_id: str | None) -> ProjectRecord:
+        """Get a project by id or default when empty."""
+        if not project_id:
+            return self.get_default_project()
+        with self._session_factory() as session:
+            row = cast(ProjectRow | None, session.get(ProjectRow, project_id))
+            if row is None:
+                raise ValueError(f"Project not found: {project_id}")
+            return self._to_project_record(row)
+
+    def update_project(
+        self, project_id: str, request: ProjectUpdateRequest
+    ) -> ProjectRecord:
+        """Update mutable project fields."""
+        with self._session_factory() as session:
+            row = cast(ProjectRow | None, session.get(ProjectRow, project_id))
+            if row is None:
+                raise ValueError(f"Project not found: {project_id}")
+            if request.name is not None:
+                row.name = request.name.strip()
+            if request.description is not None:
+                row.description = request.description.strip() or None
+            if request.default_repos is not None:
+                row.default_repos_json = json.dumps(request.default_repos)
+            if request.default_instructions is not None:
+                row.default_instructions = request.default_instructions.strip() or None
+            if request.preferences is not None:
+                row.preferences_json = request.preferences.model_dump_json()
+            row.updated_at = self._now()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise ValueError(
+                    f"Unable to update project {project_id}: duplicate name"
+                ) from exc
+            return self._to_project_record(row)
+
+    def get_default_project(self) -> ProjectRecord:
+        """Return the default project, creating it if missing."""
+        with self._session_factory() as session:
+            row = cast(ProjectRow | None, session.get(ProjectRow, DEFAULT_PROJECT_ID))
+            if row is None:
+                now = self._now()
+                row = ProjectRow(
+                    id=DEFAULT_PROJECT_ID,
+                    name=DEFAULT_PROJECT_NAME,
+                    description=DEFAULT_PROJECT_DESCRIPTION,
+                    default_repos_json="[]",
+                    default_instructions=None,
+                    preferences_json=ProjectPreferences().model_dump_json(),
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(row)
+                session.commit()
+            return self._to_project_record(row)
+
+    def _to_project_record(self, row: ProjectRow) -> ProjectRecord:
+        """Convert SQL row to API-safe project record."""
+        try:
+            repos = cast(list[str], json.loads(row.default_repos_json))
+        except json.JSONDecodeError:
+            repos = []
+        try:
+            preferences = ProjectPreferences.model_validate_json(row.preferences_json)
+        except Exception:  # noqa: BLE001
+            preferences = ProjectPreferences()
+        return ProjectRecord(
+            id=row.id,
+            name=row.name,
+            description=row.description,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            default_repos=repos,
+            default_instructions=row.default_instructions,
+            preferences=preferences,
+        )
+
+    def _ensure_default_project(self) -> None:
+        """Ensure default project exists after startup schema initialization."""
+        self.get_default_project()

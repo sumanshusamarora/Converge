@@ -19,14 +19,22 @@ class OpenAIClient:
         self.model = model or os.getenv("CONVERGE_OPENAI_MODEL") or DEFAULT_MODEL
 
     def propose_responsibility_split(
-        self, goal: str, repo_summaries: list[dict[str, Any]]
+        self,
+        goal: str,
+        repo_summaries: list[dict[str, Any]],
+        planning_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Generate a structured split proposal using LangChain OpenAI or a local fallback."""
         api_key = os.getenv("OPENAI_API_KEY")
+        effective_context = planning_context or {}
         if not api_key:
             logger.info("OPENAI_API_KEY not configured; using heuristic proposal")
-            fallback = heuristic_proposal(goal, repo_summaries)
-            fallback["questions_for_hitl"].append("Enable OPENAI_API_KEY to use LLM proposals")
+            fallback = heuristic_proposal(
+                goal, repo_summaries, planning_context=effective_context
+            )
+            fallback["questions_for_hitl"].append(
+                "Enable OPENAI_API_KEY to use LLM proposals"
+            )
             return fallback
 
         try:
@@ -35,22 +43,37 @@ class OpenAIClient:
             model = init_chat_model(self.model, model_provider="openai")
             prompt = (
                 "Return JSON only with keys: proposal, rationale, risks, questions_for_hitl."
-                f"\nInput: {json.dumps({'goal': goal, 'repo_summaries': repo_summaries})}"
+                " Use project context defaults and avoid non-blocking HITL questions."
+                f"\nInput: {json.dumps({'goal': goal, 'repo_summaries': repo_summaries, 'planning_context': effective_context})}"
             )
             response = model.invoke(prompt)
             content = _extract_content(response)
             parsed = json.loads(content)
+            proposal_obj = parsed.get("proposal", {})
+            if not isinstance(proposal_obj, dict):
+                proposal_obj = {}
+
+            risks_obj = parsed.get("risks", [])
+            if not isinstance(risks_obj, list):
+                risks_obj = [str(risks_obj)]
+
+            questions_obj = parsed.get("questions_for_hitl", [])
+            if not isinstance(questions_obj, list):
+                questions_obj = [str(questions_obj)]
+
             return {
-                "proposal": parsed.get("proposal", {}),
+                "proposal": proposal_obj,
                 "rationale": str(parsed.get("rationale", "")),
-                "risks": [str(risk) for risk in parsed.get("risks", [])],
-                "questions_for_hitl": [
-                    str(question) for question in parsed.get("questions_for_hitl", [])
-                ],
+                "risks": [str(risk) for risk in risks_obj],
+                "questions_for_hitl": [str(question) for question in questions_obj],
             }
         except Exception:
-            logger.warning("OpenAI proposal generation failed; falling back to heuristic")
-            return heuristic_proposal(goal, repo_summaries)
+            logger.warning(
+                "OpenAI proposal generation failed; falling back to heuristic"
+            )
+            return heuristic_proposal(
+                goal, repo_summaries, planning_context=effective_context
+            )
 
 
 def _extract_content(response: Any) -> str:
@@ -69,8 +92,13 @@ def _extract_content(response: Any) -> str:
     return str(content)
 
 
-def heuristic_proposal(goal: str, repo_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+def heuristic_proposal(
+    goal: str,
+    repo_summaries: list[dict[str, Any]],
+    planning_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Generate a deterministic split proposal without external network calls."""
+    _ = planning_context or {}
     assignments: dict[str, list[str]] = {}
     for repo_summary in repo_summaries:
         repo_path = str(repo_summary.get("path", "unknown"))
@@ -84,7 +112,9 @@ def heuristic_proposal(goal: str, repo_summaries: list[dict[str, Any]]) -> dict[
                 f"Implement server-side logic for {goal}",
                 "Own validation and persistence changes",
             ]
-        elif repo_type == "node" or any(hint in repo_name for hint in ["web", "ui", "frontend"]):
+        elif repo_type == "node" or any(
+            hint in repo_name for hint in ["web", "ui", "frontend"]
+        ):
             assignments[repo_path] = [
                 f"Implement user-facing updates for {goal}",
                 "Own client-side state and UX behavior",

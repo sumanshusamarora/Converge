@@ -11,6 +11,7 @@ from converge.orchestration.graph import (
     build_coordinate_graph_conditional,
     build_coordinate_graph_interrupt,
     collect_constraints_node,
+    write_artifacts_node,
 )
 from converge.orchestration.state import OrchestrationState
 
@@ -93,7 +94,9 @@ def test_conditional_graph_loops_until_max_rounds_and_hits_hitl(tmp_path: Path) 
 
     assert final_state["status"] == "HITL_REQUIRED"
     assert final_state["round"] == 3
-    propose_events = [e for e in final_state["events"] if e["node"] == "propose_split_node"]
+    propose_events = [
+        e for e in final_state["events"] if e["node"] == "propose_split_node"
+    ]
     decide_events = [e for e in final_state["events"] if e["node"] == "decide_node"]
     assert len(propose_events) == 3
     assert len(decide_events) == 3
@@ -235,7 +238,9 @@ def test_handoff_pack_structure_created(
     assert "pytest" in api_commands or "npm" in api_commands  # Python or Node commands
 
 
-def test_contract_drift_triggers_hitl_and_writes_contract_artifacts(tmp_path: Path) -> None:
+def test_contract_drift_triggers_hitl_and_writes_contract_artifacts(
+    tmp_path: Path,
+) -> None:
     repo_a = tmp_path / "repo_a"
     repo_b = tmp_path / "repo_b"
     repo_a.mkdir()
@@ -276,7 +281,9 @@ def test_contract_drift_triggers_hitl_and_writes_contract_artifacts(tmp_path: Pa
     assert "Issues:" in checks_content
 
 
-def test_collect_constraints_infers_python_for_nested_source_repo(tmp_path: Path) -> None:
+def test_collect_constraints_infers_python_for_nested_source_repo(
+    tmp_path: Path,
+) -> None:
     package_dir = tmp_path / "src" / "converge"
     package_dir.mkdir(parents=True)
     (package_dir / "main.py").write_text("print('ok')\n", encoding="utf-8")
@@ -300,3 +307,48 @@ def test_collect_constraints_infers_python_for_nested_source_repo(tmp_path: Path
     assert repo["repo_type"] == "python"
     assert "python_sources" in repo["signals"]
     assert any("fallback scan" in message for message in repo["constraints"])
+
+
+def test_write_artifacts_handles_non_dict_nested_proposal(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    state: OrchestrationState = {
+        "goal": "Malformed proposal should not crash",
+        "repos": [
+            {
+                "path": str(tmp_path / "repo"),
+                "exists": True,
+                "repo_type": "python",
+                "signals": ["pyproject.toml"],
+                "constraints": ["Python project"],
+            }
+        ],
+        "round": 1,
+        "max_rounds": 2,
+        "events": [],
+        "status": "HITL_REQUIRED",
+        "proposal": {
+            "proposal": [],
+            "rationale": "Malformed nested payload from upstream",
+            "risks": ["Shape mismatch"],
+            "questions_for_hitl": [],
+        },
+        "artifacts_dir": artifacts_dir,
+        "output_dir": str(tmp_path),
+        "model": None,
+        "no_llm": False,
+        "human_decision": None,
+        "hil_mode": "conditional",
+        "repo_plans": [],
+        "contract_analysis": {
+            "summary": {"issue_count": 0, "artifact_count": 0},
+            "issues": [],
+        },
+    }
+
+    updated = write_artifacts_node(state)
+
+    assert (artifacts_dir / "summary.md").exists()
+    assert (artifacts_dir / "responsibility-matrix.md").exists()
+    matrix = (artifacts_dir / "responsibility-matrix.md").read_text(encoding="utf-8")
+    assert "Responsibility Matrix" in matrix
+    assert updated["events"][-1]["node"] == "write_artifacts_node"

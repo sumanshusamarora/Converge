@@ -35,4 +35,6 @@ def create_agent(name: str | None = None) -> CodingAgent:
         logger.info("Creating GitHubCopilotAgent")
         return GitHubCopilotAgent()
     else:
-        raise ValueError(f"Unknown agent provider: {name}. Supported providers: codex, copilot")
+        raise ValueError(
+            f"Unknown agent provider: {name}. Supported providers: codex, copilot"
+        )

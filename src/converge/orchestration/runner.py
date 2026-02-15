@@ -32,6 +32,12 @@ def run_coordinate(
     base_output_dir: Path | None,
     hitl_resolution: dict[str, Any] | None = None,
     thread_id: str | None = None,
+    project_id: str | None = None,
+    project_name: str | None = None,
+    project_preferences: dict[str, Any] | None = None,
+    project_instructions: str | None = None,
+    custom_instructions: str | None = None,
+    execute_immediately: bool = False,
 ) -> RunOutcome:
     """Execute the coordinate workflow and return a normalized outcome."""
     final_agent_provider = agent_provider or os.getenv("CONVERGE_CODING_AGENT", "codex")
@@ -40,7 +46,9 @@ def run_coordinate(
         Literal["conditional", "interrupt"],
         os.getenv("CONVERGE_HIL_MODE", "conditional").lower(),
     )
-    enable_agent_exec = os.getenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false").lower() == "true"
+    enable_agent_exec = (
+        os.getenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false").lower() == "true"
+    )
 
     config = ConvergeConfig(
         goal=goal,
@@ -53,9 +61,17 @@ def run_coordinate(
         hil_mode=hil_mode,
         agent_provider=cast(str, final_agent_provider),
         enable_agent_exec=enable_agent_exec,
+        project_id=project_id,
+        project_name=project_name,
+        project_preferences=project_preferences or {},
+        project_instructions=project_instructions,
+        custom_instructions=custom_instructions,
+        execute_immediately=execute_immediately,
     )
 
-    coordinator = Coordinator(config, hitl_resolution=hitl_resolution, thread_id=thread_id)
+    coordinator = Coordinator(
+        config, hitl_resolution=hitl_resolution, thread_id=thread_id
+    )
     final_state = coordinator.coordinate()
 
     hitl_questions: list[str] = []

@@ -56,7 +56,9 @@ def test_converge_config_no_repos() -> None:
 
 
 def test_converge_config_invalid_hil_mode() -> None:
-    with pytest.raises(ValidationError, match="Input should be 'conditional' or 'interrupt'"):
+    with pytest.raises(
+        ValidationError, match="Input should be 'conditional' or 'interrupt'"
+    ):
         ConvergeConfig(goal="Some goal", repos=["api"], hil_mode="invalid")  # type: ignore[arg-type]
 
 

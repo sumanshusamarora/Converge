@@ -10,6 +10,7 @@ try:
 
     def _load_dotenv(dotenv_path: str | PathLike[str] | None, override: bool) -> bool:
         return _load_dotenv_real(dotenv_path=dotenv_path, override=override)
+
 except ImportError:  # pragma: no cover - exercised only when dependency is missing
     from converge.core.dotenv_compat import load_dotenv as _load_dotenv_fallback
 

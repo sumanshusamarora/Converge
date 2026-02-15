@@ -18,7 +18,7 @@ export default function RootLayout({
         <div className="app-shell">
           <header className="site-header">
             <div className="site-header-inner">
-              <Link href="/tasks" className="brand-block" aria-label="Converge home">
+              <Link href="/projects" className="brand-block" aria-label="Converge home">
                 <span className="brand-mark" aria-hidden="true" />
                 <span className="brand-copy">
                   <strong>Converge</strong>
@@ -26,6 +26,9 @@ export default function RootLayout({
                 </span>
               </Link>
               <nav className="top-nav" aria-label="Primary">
+                <Link href="/projects" className="top-nav-link">
+                  Projects
+                </Link>
                 <Link href="/tasks" className="top-nav-link">
                   Tasks
                 </Link>

@@ -50,7 +50,9 @@ def test_execution_policy_custom_values() -> None:
 
 def test_is_command_allowed_empty_allowlist() -> None:
     """Test is_command_allowed with empty allowlist."""
-    policy = ExecutionPolicy(mode=ExecutionMode.EXECUTE_HEADLESS, allowlisted_commands=[])
+    policy = ExecutionPolicy(
+        mode=ExecutionMode.EXECUTE_HEADLESS, allowlisted_commands=[]
+    )
 
     assert policy.is_command_allowed("pytest") is False
     assert policy.is_command_allowed("ruff check .") is False
@@ -207,7 +209,9 @@ def test_policy_from_env_custom_env_dict() -> None:
     assert policy.allowlisted_commands == ["pytest", "ruff"]
 
 
-def test_policy_from_env_uses_default_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_policy_from_env_uses_default_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that default allowlist is used when not specified."""
     monkeypatch.delenv("CONVERGE_ALLOWLISTED_CMDS", raising=False)
     policy = policy_from_env_and_flags()
@@ -247,7 +251,9 @@ def test_policy_from_env_whitespace_handling(monkeypatch: pytest.MonkeyPatch) ->
     assert policy.allowlisted_commands == ["pytest", "ruff", "git"]
 
 
-def test_policy_from_env_empty_allowlist_string(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_policy_from_env_empty_allowlist_string(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test that empty allowlist string uses default."""
     monkeypatch.setenv("CONVERGE_ALLOWLISTED_CMDS", "")
 

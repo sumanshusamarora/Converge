@@ -17,6 +17,7 @@ Converge coordinates work across peer repositories by generating plans, tracking
 ## Key terms
 
 - **Task**: Queue item containing `goal`, `repos`, and orchestration options.
+- **Project**: Container for task defaults/preferences (planning style, HITL policy, execution flow).
 - **Run**: One workflow execution for a task. Runs write files under `.converge/runs/<timestamp>/` by default.
 - **Artifact**: Output file created during a run (for example `summary.md` or `run.json`).
 - **HITL**: Human-in-the-loop escalation state (`HITL_REQUIRED`) when Converge needs input.

@@ -32,7 +32,9 @@ def test_worker_cli_once_processes_one_task(
     queue = DatabaseTaskQueue(database_uri)
     fake_repo = tmp_path / "repo"
     fake_repo.mkdir()
-    (fake_repo / "pyproject.toml").write_text("[project]\nname='repo'\n", encoding="utf-8")
+    (fake_repo / "pyproject.toml").write_text(
+        "[project]\nname='repo'\n", encoding="utf-8"
+    )
     task = queue.enqueue(TaskRequest(goal="Goal", repos=[str(fake_repo)]))
 
     from converge.orchestration.runner import RunOutcome
@@ -45,6 +47,12 @@ def test_worker_cli_once_processes_one_task(
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
         thread_id: str | None = None,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        project_preferences: dict[str, object] | None = None,
+        project_instructions: str | None = None,
+        custom_instructions: str | None = None,
+        execute_immediately: bool = False,
     ) -> RunOutcome:
         artifacts_dir = tmp_path / "cli-artifacts"
         artifacts_dir.mkdir(exist_ok=True)
@@ -65,7 +73,9 @@ def test_worker_cli_once_processes_one_task(
     assert stored.status == TaskStatus.SUCCEEDED
 
 
-def test_retry_behavior_until_failed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_retry_behavior_until_failed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     db_path = tmp_path / "retry.db"
     database_uri = f"sqlite:///{db_path}"
     _configure_env(monkeypatch, database_uri)
@@ -81,6 +91,12 @@ def test_retry_behavior_until_failed(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
         thread_id: str | None = None,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        project_preferences: dict[str, object] | None = None,
+        project_instructions: str | None = None,
+        custom_instructions: str | None = None,
+        execute_immediately: bool = False,
     ) -> object:
         raise RuntimeError("boom")
 

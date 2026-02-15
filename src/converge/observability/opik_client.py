@@ -60,10 +60,14 @@ def track_langgraph_app(app: Any) -> Any:
 
     try:
         langchain_integration = importlib.import_module("opik.integrations.langchain")
-        opik_tracer = langchain_integration.OpikTracer(tags=["converge"], metadata={"app": "cli"})
+        opik_tracer = langchain_integration.OpikTracer(
+            tags=["converge"], metadata={"app": "cli"}
+        )
         return langchain_integration.track_langgraph(app, opik_tracer)
     except Exception:
-        logger.warning("Opik LangGraph integration unavailable; continuing without graph tracing")
+        logger.warning(
+            "Opik LangGraph integration unavailable; continuing without graph tracing"
+        )
         return app
 
 
@@ -82,7 +86,10 @@ def opik_track(name: str | None = None) -> Callable[[F], F]:
                     tracked = track(name=name or func.__name__)(func)
                     return tracked(*args, **kwargs)
             except Exception:
-                logger.debug("Opik track wrapper failed; calling function directly", exc_info=True)
+                logger.debug(
+                    "Opik track wrapper failed; calling function directly",
+                    exc_info=True,
+                )
             return func(*args, **kwargs)
 
         return wrapper  # type: ignore[return-value]

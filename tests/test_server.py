@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from converge.queue.schemas import TaskResult, TaskStatus
 from converge.server.app import create_app
 from converge.server.security import compute_signature
 
@@ -62,7 +63,9 @@ def test_webhook_hmac_required_when_secret_set(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("SQLALCHEMY_DATABASE_URI", f"sqlite:///{tmp_path / 'server_hmac.db'}")
+    monkeypatch.setenv(
+        "SQLALCHEMY_DATABASE_URI", f"sqlite:///{tmp_path / 'server_hmac.db'}"
+    )
     monkeypatch.setenv("CONVERGE_QUEUE_BACKEND", "db")
     monkeypatch.setenv("CONVERGE_WORKER_MAX_ATTEMPTS", "3")
     monkeypatch.setenv("CONVERGE_WEBHOOK_SECRET", "abc")
@@ -96,7 +99,9 @@ def test_webhook_body_size_limit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("SQLALCHEMY_DATABASE_URI", f"sqlite:///{tmp_path / 'server_limit.db'}")
+    monkeypatch.setenv(
+        "SQLALCHEMY_DATABASE_URI", f"sqlite:///{tmp_path / 'server_limit.db'}"
+    )
     monkeypatch.setenv("CONVERGE_QUEUE_BACKEND", "db")
     monkeypatch.setenv("CONVERGE_WORKER_MAX_ATTEMPTS", "3")
     monkeypatch.setenv("CONVERGE_WEBHOOK_SECRET", "")
@@ -135,4 +140,126 @@ def test_jira_webhook_maps_goal(server_env: None) -> None:
     task_id = response.json()["task_id"]
     task_response = client.get(f"/tasks/{task_id}")
     assert task_response.status_code == 200
-    assert "Jira PROJ-123: Fix authentication" in task_response.json()["request"]["goal"]
+    assert (
+        "Jira PROJ-123: Fix authentication" in task_response.json()["request"]["goal"]
+    )
+
+
+def test_task_events_endpoint_includes_hitl_states(server_env: None) -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/api/tasks",
+        json={"goal": "Needs manual decision", "repos": ["repo-a"]},
+    )
+    assert create_response.status_code == 200
+    task_id = create_response.json()["id"]
+
+    queue = app.state.queue
+    queue.complete(
+        task_id,
+        TaskResult(
+            status=TaskStatus.HITL_REQUIRED,
+            summary="Need human input",
+            hitl_questions=["Choose owner for API contract update"],
+            status_reason="Ownership is ambiguous",
+        ),
+    )
+    queue.resolve_hitl(
+        task_id,
+        {
+            "answers": {"owner": "backend-team"},
+            "resolved_at": "2026-02-13T00:00:00Z",
+        },
+    )
+
+    response = client.get(f"/api/tasks/{task_id}/events")
+    assert response.status_code == 200
+    events = response.json()
+
+    timestamps = [event["ts"] for event in events]
+    assert timestamps == sorted(timestamps)
+
+    event_types = {event["type"] for event in events}
+    assert "HITL_REQUIRED" in event_types
+    assert "HITL_RESOLVED" in event_types
+
+
+def test_list_tasks_returns_paginated_payload(server_env: None) -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    for index in range(3):
+        response = client.post(
+            "/api/tasks",
+            json={"goal": f"Task {index}", "repos": ["repo-a"]},
+        )
+        assert response.status_code == 200
+
+    page_one = client.get("/api/tasks?page=1&page_size=2")
+    assert page_one.status_code == 200
+    payload_one = page_one.json()
+    assert payload_one["page"] == 1
+    assert payload_one["page_size"] == 2
+    assert payload_one["offset"] == 0
+    assert payload_one["total"] == 3
+    assert payload_one["has_next"] is True
+    assert payload_one["has_prev"] is False
+    assert len(payload_one["items"]) == 2
+
+    page_two = client.get("/api/tasks?page=2&page_size=2")
+    assert page_two.status_code == 200
+    payload_two = page_two.json()
+    assert payload_two["page"] == 2
+    assert payload_two["page_size"] == 2
+    assert payload_two["offset"] == 2
+    assert payload_two["total"] == 3
+    assert payload_two["has_next"] is False
+    assert payload_two["has_prev"] is True
+    assert len(payload_two["items"]) == 1
+
+
+def test_task_creation_assigns_default_project(server_env: None) -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    default_project = client.get("/api/projects/default")
+    assert default_project.status_code == 200
+    default_project_id = default_project.json()["id"]
+
+    response = client.post(
+        "/api/tasks",
+        json={"goal": "Project assignment check", "repos": ["repo-a"]},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["project_id"] == default_project_id
+    assert payload["request"]["project_id"] == default_project_id
+
+
+def test_followup_task_from_existing_task(server_env: None) -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/api/tasks",
+        json={"goal": "Initial planning", "repos": ["repo-a"]},
+    )
+    assert create_response.status_code == 200
+    task = create_response.json()
+
+    followup_response = client.post(
+        f"/api/tasks/{task['id']}/followup",
+        json={
+            "instruction": "Use existing API contracts; avoid new deps",
+            "execute_immediately": False,
+        },
+    )
+    assert followup_response.status_code == 200
+    followup = followup_response.json()
+    assert followup["id"] != task["id"]
+    assert "existing API contracts" in (
+        followup["request"]["custom_instructions"] or ""
+    )
+    assert followup["request"]["metadata"]["followup_from_task_id"] == task["id"]

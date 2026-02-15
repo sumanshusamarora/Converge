@@ -115,7 +115,9 @@ class CopilotCliExecutor:
             return CmdResult(
                 ok=False,
                 exit_code=2,
-                message=("GitHub CLI (gh) not found. Install from: https://cli.github.com/"),
+                message=(
+                    "GitHub CLI (gh) not found. Install from: https://cli.github.com/"
+                ),
             )
 
         # Gate 3: Check Copilot extension availability
@@ -134,8 +136,12 @@ class CopilotCliExecutor:
         execution_dir.mkdir(parents=True, exist_ok=True)
 
         # Prepare stdout/stderr paths
-        stdout_path = execution_dir / f"copilot_cli_{repo_slug.replace('/', '_')}_stdout.txt"
-        stderr_path = execution_dir / f"copilot_cli_{repo_slug.replace('/', '_')}_stderr.txt"
+        stdout_path = (
+            execution_dir / f"copilot_cli_{repo_slug.replace('/', '_')}_stdout.txt"
+        )
+        stderr_path = (
+            execution_dir / f"copilot_cli_{repo_slug.replace('/', '_')}_stderr.txt"
+        )
 
         # Read the prompt/instruction
         try:

@@ -7,6 +7,21 @@ Why Converge exists:
 - provide a queue/worker model for repeatable orchestration runs
 - produce artifacts (summary, matrix, run payload, prompt packs) for humans to execute safely
 
+## Project-first model
+
+Converge is now organized as:
+- project (preferences + defaults)
+- tasks under that project
+
+Every task belongs to a project. If `project_id` is omitted, Converge assigns a default project automatically and backfills existing tasks to it.
+
+Project preferences influence planning and HITL behavior, including:
+- planning strategy (`extend_existing` or `best_practice_first`)
+- HITL trigger mode (`blockers_only` by default)
+- max HITL questions (default `2`)
+- execution flow (`plan_then_execute` by default)
+- whether post-plan custom instructions are allowed
+
 ## Local quickstart (SQLite)
 
 ```bash
@@ -49,6 +64,13 @@ Check what your environment will do:
 ```bash
 converge doctor
 ```
+
+Project/task API highlights:
+- `GET /api/projects`
+- `GET /api/projects/default`
+- `POST /api/projects`
+- `PATCH /api/projects/{project_id}`
+- `POST /api/tasks/{task_id}/followup`
 
 
 ## Documentation

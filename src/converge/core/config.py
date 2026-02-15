@@ -24,6 +24,12 @@ class ConvergeConfig(BaseModel):
     hil_mode: Literal["conditional", "interrupt"] = "conditional"
     agent_provider: str = "codex"
     enable_agent_exec: bool = False
+    project_id: str | None = None
+    project_name: str | None = None
+    project_preferences: dict[str, Any] = Field(default_factory=dict)
+    project_instructions: str | None = None
+    custom_instructions: str | None = None
+    execute_immediately: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:
@@ -73,7 +79,9 @@ def load_queue_settings() -> QueueSettings:
             os.getenv("CONVERGE_WORKER_POLL_INTERVAL_SECONDS", "2")
         )
     except ValueError as exc:
-        raise ValueError("CONVERGE_WORKER_POLL_INTERVAL_SECONDS must be a float") from exc
+        raise ValueError(
+            "CONVERGE_WORKER_POLL_INTERVAL_SECONDS must be a float"
+        ) from exc
 
     try:
         worker_batch_size = int(os.getenv("CONVERGE_WORKER_BATCH_SIZE", "1"))
@@ -112,7 +120,9 @@ def load_server_settings() -> ServerSettings:
     webhook_secret = os.getenv("CONVERGE_WEBHOOK_SECRET") or None
 
     try:
-        webhook_max_body_bytes = int(os.getenv("CONVERGE_WEBHOOK_MAX_BODY_BYTES", "262144"))
+        webhook_max_body_bytes = int(
+            os.getenv("CONVERGE_WEBHOOK_MAX_BODY_BYTES", "262144")
+        )
     except ValueError as exc:
         raise ValueError("CONVERGE_WEBHOOK_MAX_BODY_BYTES must be an integer") from exc
 
@@ -121,7 +131,9 @@ def load_server_settings() -> ServerSettings:
             os.getenv("CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", "86400")
         )
     except ValueError as exc:
-        raise ValueError("CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS must be an integer") from exc
+        raise ValueError(
+            "CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS must be an integer"
+        ) from exc
 
     if port <= 0:
         raise ValueError("CONVERGE_SERVER_PORT must be > 0")
@@ -178,13 +190,26 @@ def load_execution_settings() -> ExecutionSettings:
     # Parse allowlisted commands
     allowlist_str = os.getenv("CONVERGE_ALLOWLISTED_CMDS", "")
     if allowlist_str.strip():
-        allowlisted_cmds = [cmd.strip() for cmd in allowlist_str.split(",") if cmd.strip()]
+        allowlisted_cmds = [
+            cmd.strip() for cmd in allowlist_str.split(",") if cmd.strip()
+        ]
     else:
         # Default allowlist
-        allowlisted_cmds = ["pytest", "ruff", "npm", "pnpm", "yarn", "python", "pip", "git"]
+        allowlisted_cmds = [
+            "pytest",
+            "ruff",
+            "npm",
+            "pnpm",
+            "yarn",
+            "python",
+            "pip",
+            "git",
+        ]
 
     # Parse git safety flags
-    require_git_clean_str = os.getenv("CONVERGE_REQUIRE_GIT_CLEAN", "true").strip().lower()
+    require_git_clean_str = (
+        os.getenv("CONVERGE_REQUIRE_GIT_CLEAN", "true").strip().lower()
+    )
     require_git_clean = require_git_clean_str == "true"
 
     create_branch_str = os.getenv("CONVERGE_CREATE_BRANCH", "true").strip().lower()
@@ -215,7 +240,9 @@ def load_codex_apply_settings() -> CodexApplySettings:
     allow_dirty = os.getenv("CONVERGE_ALLOW_DIRTY", "false").strip().lower() == "true"
     git_commit = os.getenv("CONVERGE_GIT_COMMIT", "true").strip().lower() == "true"
     git_author_name = os.getenv("CONVERGE_GIT_AUTHOR_NAME", "Converge Bot")
-    git_author_email = os.getenv("CONVERGE_GIT_AUTHOR_EMAIL", "converge-bot@example.com")
+    git_author_email = os.getenv(
+        "CONVERGE_GIT_AUTHOR_EMAIL", "converge-bot@example.com"
+    )
 
     # Parse threshold settings (None means no limit)
     max_changed_files = None

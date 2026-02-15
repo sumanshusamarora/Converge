@@ -137,4 +137,6 @@ class CodingAgent(ABC):
         Raises:
             NotImplementedError: If execution is not supported by this agent
         """
-        raise NotImplementedError(f"{self.__class__.__name__} does not implement execute()")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement execute()"
+        )

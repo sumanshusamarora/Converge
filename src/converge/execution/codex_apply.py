@@ -399,7 +399,10 @@ class CodexApplyExecutor:
         threshold_messages = []
 
         # Check max changed files
-        if self.max_changed_files is not None and len(changed_files) > self.max_changed_files:
+        if (
+            self.max_changed_files is not None
+            and len(changed_files) > self.max_changed_files
+        ):
             threshold_exceeded = True
             threshold_messages.append(
                 f"Changed files: {len(changed_files)} exceeds limit of {self.max_changed_files}"
@@ -421,7 +424,9 @@ class CodexApplyExecutor:
             )
 
         if threshold_exceeded:
-            logger.warning("Safety thresholds exceeded: %s", "; ".join(threshold_messages))
+            logger.warning(
+                "Safety thresholds exceeded: %s", "; ".join(threshold_messages)
+            )
             return ExecResult(
                 ok=True,  # Not a failure, but HITL required
                 exit_code=0,

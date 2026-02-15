@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from converge.cli.main import cli
+from converge.queue.factory import create_queue
 
 
 def test_cli_help() -> None:
@@ -98,6 +99,50 @@ def test_coordinate_command_interrupt_mode_missing_repo_exit_code(
     assert result.exit_code == 2
 
 
+def test_coordinate_command_persists_task_when_db_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliRunner()
+    output_dir = tmp_path / "out"
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pyproject.toml").write_text(
+        "[project]\nname='repo'\n", encoding="utf-8"
+    )
+
+    db_path = tmp_path / "cli.db"
+    monkeypatch.setenv("CONVERGE_QUEUE_BACKEND", "db")
+    monkeypatch.setenv("SQLALCHEMY_DATABASE_URI", f"sqlite:///{db_path}")
+    monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
+
+    result = runner.invoke(
+        cli,
+        [
+            "coordinate",
+            "--goal",
+            "Persist this run",
+            "--repos",
+            str(repo_dir),
+            "--output-dir",
+            str(output_dir),
+            "--log-level",
+            "ERROR",
+            "--no-llm",
+            "--no-tracing",
+            "--hil-mode",
+            "conditional",
+        ],
+    )
+
+    assert result.exit_code == 0
+    queue = create_queue()
+    assert hasattr(queue, "list_tasks")
+    tasks = queue.list_tasks(limit=20)  # type: ignore[attr-defined]
+    assert len(tasks) >= 1
+    assert tasks[0].request.goal == "Persist this run"
+    assert tasks[0].status.value in {"SUCCEEDED", "HITL_REQUIRED"}
+
+
 def test_worker_command_help() -> None:
     runner = CliRunner()
     result = runner.invoke(cli, ["worker", "--help"])
@@ -130,7 +175,9 @@ def test_install_codex_cli_run_executes_script(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr("converge.cli.main.shutil.which", lambda _: "/usr/bin/npm")
     monkeypatch.setattr(
         "converge.cli.main.subprocess.run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="ok", stderr=""),
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout="ok", stderr=""
+        ),
     )
 
     result = runner.invoke(cli, ["install-codex-cli", "--run"])

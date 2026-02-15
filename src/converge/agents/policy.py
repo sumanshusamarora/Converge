@@ -48,7 +48,9 @@ class ExecutionPolicy:
             return False
 
         command_lower = command.strip().lower()
-        return any(command_lower.startswith(prefix) for prefix in self.allowlisted_commands)
+        return any(
+            command_lower.startswith(prefix) for prefix in self.allowlisted_commands
+        )
 
 
 def get_default_allowlist() -> list[str]:
@@ -106,7 +108,9 @@ def policy_from_env_and_request(
         cli_flags = {}
 
     # Check if coding-agent execution is enabled via environment
-    execution_enabled = env.get("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false").lower() == "true"
+    execution_enabled = (
+        env.get("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false").lower() == "true"
+    )
 
     # Check if execution is explicitly allowed via task or CLI flags
     task_allow_exec = task_request_metadata.get("allow_exec", False)

@@ -58,8 +58,12 @@ def test_copilot_agent_plan_contains_prompt(tmp_path: Path) -> None:
     """Test that CopilotAgent generates a prompt with goal and repo context."""
     repo_dir = tmp_path / "test-repo"
     repo_dir.mkdir()
-    (repo_dir / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (repo_dir / "README.md").write_text("# Test Repo\n\nA test repository.", encoding="utf-8")
+    (repo_dir / "pyproject.toml").write_text(
+        "[project]\nname='test'\n", encoding="utf-8"
+    )
+    (repo_dir / "README.md").write_text(
+        "# Test Repo\n\nA test repository.", encoding="utf-8"
+    )
 
     repo_context = RepoContext(
         path=repo_dir,
@@ -112,7 +116,9 @@ def test_copilot_agent_hitl_required_for_missing_repo(tmp_path: Path) -> None:
     assert len(result.questions_for_hitl) > 0
 
 
-def test_codex_agent_plan_disabled_exec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_codex_agent_plan_disabled_exec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test that CodexAgent does not execute when CONVERGE_CODING_AGENT_EXEC_ENABLED is false."""
     monkeypatch.setenv("CONVERGE_CODING_AGENT_EXEC_ENABLED", "false")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -164,7 +170,9 @@ def test_codex_agent_plan_uses_codex_cli_when_available(
     )
     task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
 
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
 
     def fake_run(
         cmd: list[str],
@@ -214,10 +222,14 @@ def test_codex_agent_plan_falls_back_on_codex_cli_error(
     )
     task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
 
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
     monkeypatch.setattr(
         "converge.agents.codex_agent.subprocess.run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, stdout="", stderr="boom"),
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 1, stdout="", stderr="boom"
+        ),
     )
 
     with caplog.at_level(logging.WARNING):
@@ -240,7 +252,9 @@ def test_codex_agent_plan_force_mode_forces_codex_attempt(
     repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
     task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
 
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
 
     invoked = {"value": False}
 
@@ -267,7 +281,9 @@ def test_codex_agent_plan_falls_back_to_next_model_on_access_error(
     repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
     task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
 
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
     calls: list[str] = []
 
     def fake_run(
@@ -322,7 +338,9 @@ def test_codex_agent_plan_falls_back_on_unsupported_model_error(
     repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
     task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
 
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
     calls: list[str] = []
 
     def fake_run(
@@ -340,8 +358,8 @@ def test_codex_agent_plan_falls_back_on_unsupported_model_error(
                 1,
                 stdout="",
                 stderr=(
-                    "{\"detail\":\"The 'gpt-5-mini' model is not supported when using Codex "
-                    "with a ChatGPT account.\"}"
+                    '{"detail":"The \'gpt-5-mini\' model is not supported when using Codex '
+                    'with a ChatGPT account."}'
                 ),
             )
         output_path = Path(cmd[cmd.index("--output-last-message") + 1])
@@ -379,7 +397,9 @@ def test_codex_agent_plan_uses_explicit_model(
     repo_context = RepoContext(path=repo_dir, kind="frontend", signals=["package.json"])
     task = AgentTask(goal="Improve UI", repo=repo_context, instructions="Be specific.")
 
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
     models_used: list[str] = []
 
     def fake_run(
@@ -415,7 +435,9 @@ def test_codex_agent_plan_uses_explicit_model(
 def test_codex_agent_plan_diagnostics_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
     monkeypatch.setattr(
         "converge.agents.codex_agent.subprocess.run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -443,7 +465,8 @@ def test_codex_agent_plan_diagnostics_disabled(monkeypatch: pytest.MonkeyPatch) 
     fallback_reasons = diagnostics["fallback_reasons"]
     assert isinstance(fallback_reasons, list)
     assert any(
-        "CONVERGE_CODING_AGENT_PLAN_MODE=disable" in reason for reason in fallback_reasons
+        "CONVERGE_CODING_AGENT_PLAN_MODE=disable" in reason
+        for reason in fallback_reasons
     )
 
 
@@ -451,7 +474,9 @@ def test_codex_agent_plan_diagnostics_disabled_with_plan_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("CONVERGE_CODING_AGENT_PLAN_MODE", "disable")
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
 
     diagnostics = CodexAgent().plan_diagnostics()
 
@@ -461,7 +486,8 @@ def test_codex_agent_plan_diagnostics_disabled_with_plan_mode(
     fallback_reasons = diagnostics["fallback_reasons"]
     assert isinstance(fallback_reasons, list)
     assert any(
-        "CONVERGE_CODING_AGENT_PLAN_MODE=disable" in reason for reason in fallback_reasons
+        "CONVERGE_CODING_AGENT_PLAN_MODE=disable" in reason
+        for reason in fallback_reasons
     )
 
 
@@ -500,7 +526,9 @@ def test_codex_agent_plan_logs_model_unavailable_and_falls_back(
 ) -> None:
     monkeypatch.delenv("CONVERGE_CODING_AGENT_PLAN_MODE", raising=False)
     monkeypatch.delenv("CONVERGE_CODING_AGENT_MODEL", raising=False)
-    monkeypatch.setattr("converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "converge.agents.codex_agent.shutil.which", lambda _: "/usr/bin/codex"
+    )
     monkeypatch.setattr(
         "converge.agents.codex_agent.subprocess.run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -579,7 +607,9 @@ def test_workflow_writes_prompts(
     assert len(prompt_files) > 0
 
 
-def test_cli_agent_provider_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_agent_provider_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test that --coding-agent flag works correctly."""
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -624,7 +654,9 @@ def test_cli_agent_provider_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert prompts_dir.exists()
 
 
-def test_cli_enable_codex_exec_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_enable_codex_exec_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test that --enable-agent-exec flag sets the environment variable."""
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)

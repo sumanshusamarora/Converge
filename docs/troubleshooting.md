@@ -74,3 +74,35 @@ docker compose up --build
   - `CONVERGE_FRONTEND_HOST_PORT` (default `3000`)
 
 - Postgres is internal-only in default compose setup. If you need host DB access, add a port mapping for `postgres` in a local compose override file.
+
+## Frontend `Cannot find module './411.js'` (or similar chunk id)
+
+Symptoms:
+- Next.js dev server returns `500` on `/tasks` (or other pages)
+- Logs include errors like:
+  - `Cannot find module './411.js'`
+  - `Require stack: ... .next/server/webpack-runtime.js`
+
+Cause:
+- Stale/corrupted `.next` artifacts, often after switching between `next build/start` and `next dev`.
+- Mixed dev/prod chunk outputs in the same build folder can also trigger this class of runtime module errors.
+
+Fix:
+
+```bash
+cd src/frontend
+npm run clean
+npm run dev
+```
+
+Note:
+- Converge frontend now writes dev output to `.next-dev` and production output to `.next` to reduce cross-mode cache conflicts.
+
+If it still fails, fully refresh dependencies:
+
+```bash
+cd src/frontend
+rm -rf node_modules package-lock.json .next
+npm install
+npm run dev
+```

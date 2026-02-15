@@ -21,7 +21,9 @@ class JiraTaskSource(TaskSource):
     def ingest(self, event: dict[str, Any]) -> TaskRequest:
         """Convert a Jira event payload into a task request."""
         payload = JiraWebhookPayload.model_validate(event)
-        task_request, _ = jira_payload_to_task(payload, default_repos=self._default_repos)
+        task_request, _ = jira_payload_to_task(
+            payload, default_repos=self._default_repos
+        )
         return task_request
 
     def poll(self) -> list[TaskRequest]:

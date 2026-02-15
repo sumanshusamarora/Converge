@@ -25,7 +25,9 @@ def _set_queue_env(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
     monkeypatch.setenv("OPIK_TRACK_DISABLE", "true")
 
 
-def test_enqueue_creates_pending_task(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
+def test_enqueue_creates_pending_task(
+    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
+) -> None:
     _set_queue_env(monkeypatch, sqlite_uri)
     queue = DatabaseTaskQueue(sqlite_uri)
 
@@ -33,9 +35,40 @@ def test_enqueue_creates_pending_task(monkeypatch: pytest.MonkeyPatch, sqlite_ur
 
     assert task.status == TaskStatus.PENDING
     assert task.attempts == 0
+    assert task.project_id
+    default_project = queue.get_default_project()
+    assert task.project_id == default_project.id
 
 
-def test_poll_and_claim_updates_status(monkeypatch: pytest.MonkeyPatch, sqlite_uri: str) -> None:
+def test_create_project_and_assign_task(
+    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
+) -> None:
+    _set_queue_env(monkeypatch, sqlite_uri)
+    queue = DatabaseTaskQueue(sqlite_uri)
+
+    from converge.queue.schemas import ProjectCreateRequest
+
+    project = queue.create_project(
+        ProjectCreateRequest(
+            name="UI Modernization",
+            default_repos=["src/frontend", "src/converge"],
+        )
+    )
+    task = queue.enqueue(
+        TaskRequest(
+            goal="Upgrade timeline UI",
+            repos=[],
+            project_id=project.id,
+        )
+    )
+
+    assert task.project_id == project.id
+    assert task.request.project_id == project.id
+
+
+def test_poll_and_claim_updates_status(
+    monkeypatch: pytest.MonkeyPatch, sqlite_uri: str
+) -> None:
     _set_queue_env(monkeypatch, sqlite_uri)
     queue = DatabaseTaskQueue(sqlite_uri)
     task = queue.enqueue(TaskRequest(goal="Goal", repos=["repo_a"]))
@@ -73,8 +106,15 @@ def test_worker_run_once_completes_task_and_stores_artifacts(
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
         thread_id: str | None = None,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        project_preferences: dict[str, object] | None = None,
+        project_instructions: str | None = None,
+        custom_instructions: str | None = None,
+        execute_immediately: bool = False,
     ) -> RunOutcome:
         assert thread_id == task.id
+        assert project_id == task.project_id
         artifacts_dir = tmp_path / "artifacts"
         artifacts_dir.mkdir()
         (artifacts_dir / "summary.md").write_text("ok", encoding="utf-8")
@@ -227,10 +267,17 @@ def test_worker_resume_with_hitl_resolution(
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
         thread_id: str | None = None,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        project_preferences: dict[str, object] | None = None,
+        project_instructions: str | None = None,
+        custom_instructions: str | None = None,
+        execute_immediately: bool = False,
     ) -> RunOutcome:
         first_run_called["called"] = True
         assert hitl_resolution is None  # First run has no resolution
         assert thread_id == task.id
+        assert project_id == task.project_id
         return RunOutcome(
             status="HITL_REQUIRED",
             summary="needs input",
@@ -238,7 +285,9 @@ def test_worker_resume_with_hitl_resolution(
             hitl_questions=["Question 1"],
         )
 
-    monkeypatch.setattr("converge.worker.poller.run_coordinate", fake_run_coordinate_first)
+    monkeypatch.setattr(
+        "converge.worker.poller.run_coordinate", fake_run_coordinate_first
+    )
 
     worker = PollingWorker(queue=queue, poll_interval_seconds=0.01, batch_size=1)
     processed = worker.run_once()
@@ -265,10 +314,17 @@ def test_worker_resume_with_hitl_resolution(
         base_output_dir: Path | None,
         hitl_resolution: dict[str, object] | None = None,
         thread_id: str | None = None,
+        project_id: str | None = None,
+        project_name: str | None = None,
+        project_preferences: dict[str, object] | None = None,
+        project_instructions: str | None = None,
+        custom_instructions: str | None = None,
+        execute_immediately: bool = False,
     ) -> RunOutcome:
         second_run_called["called"] = True
         second_run_called["resolution"] = hitl_resolution
         assert thread_id == task.id
+        assert project_id == task.project_id
         return RunOutcome(
             status="CONVERGED",
             summary="completed",
@@ -276,7 +332,9 @@ def test_worker_resume_with_hitl_resolution(
             hitl_questions=[],
         )
 
-    monkeypatch.setattr("converge.worker.poller.run_coordinate", fake_run_coordinate_second)
+    monkeypatch.setattr(
+        "converge.worker.poller.run_coordinate", fake_run_coordinate_second
+    )
 
     processed = worker.run_once()
 

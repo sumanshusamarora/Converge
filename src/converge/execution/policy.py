@@ -56,7 +56,9 @@ class ExecutionPolicy:
             return False
 
         command_lower = command.strip().lower()
-        return any(command_lower.startswith(prefix) for prefix in self.allowlisted_commands)
+        return any(
+            command_lower.startswith(prefix) for prefix in self.allowlisted_commands
+        )
 
 
 def get_default_allowlist() -> list[str]:
@@ -123,12 +125,16 @@ def policy_from_env_and_flags(
     # Parse allowlisted commands
     allowlist_str = env.get("CONVERGE_ALLOWLISTED_CMDS", "")
     if allowlist_str.strip():
-        allowlisted_commands = [cmd.strip() for cmd in allowlist_str.split(",") if cmd.strip()]
+        allowlisted_commands = [
+            cmd.strip() for cmd in allowlist_str.split(",") if cmd.strip()
+        ]
     else:
         allowlisted_commands = get_default_allowlist()
 
     # Parse git safety flags
-    require_git_clean_str = env.get("CONVERGE_REQUIRE_GIT_CLEAN", "true").strip().lower()
+    require_git_clean_str = (
+        env.get("CONVERGE_REQUIRE_GIT_CLEAN", "true").strip().lower()
+    )
     require_git_clean = require_git_clean_str == "true"
 
     create_branch_str = env.get("CONVERGE_CREATE_BRANCH", "true").strip().lower()

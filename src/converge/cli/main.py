@@ -20,6 +20,7 @@ from converge.core.logging import setup_logging
 from converge.observability.opik_client import configure_opik
 from converge.orchestration.runner import run_coordinate
 from converge.queue.factory import create_queue
+from converge.queue.schemas import TaskRequest, TaskResult, TaskStatus
 from converge.worker.poller import PollingWorker
 
 logger = logging.getLogger(__name__)
@@ -157,8 +158,7 @@ def _build_codex_install_script(package_manager: str) -> str:
         "yarn": "yarn global add @openai/codex",
     }
     install_cmd = install_cmds[package_manager]
-    return textwrap.dedent(
-        f"""\
+    return textwrap.dedent(f"""\
         set -euo pipefail
         if ! command -v {package_manager} >/dev/null 2>&1; then
           echo "{package_manager} is not installed. Please install it first."
@@ -166,19 +166,22 @@ def _build_codex_install_script(package_manager: str) -> str:
         fi
         {install_cmd}
         codex --version
-        """
-    )
+        """)
 
 
 @cli.command()
-@click.option("--goal", required=True, help="The high-level goal to achieve across repositories")
+@click.option(
+    "--goal", required=True, help="The high-level goal to achieve across repositories"
+)
 @click.option(
     "--repos",
     required=True,
     multiple=True,
     help="Repository identifiers (can be specified multiple times)",
 )
-@click.option("--max-rounds", default=2, type=int, help="Maximum number of convergence rounds")
+@click.option(
+    "--max-rounds", default=2, type=int, help="Maximum number of convergence rounds"
+)
 @click.option(
     "--output-dir",
     default=".converge",
@@ -187,16 +190,22 @@ def _build_codex_install_script(package_manager: str) -> str:
 @click.option(
     "--log-level",
     default="INFO",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
+    type=click.Choice(
+        ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False
+    ),
     help="Logging level (default: INFO)",
 )
-@click.option("--model", default=None, help="Override OpenAI model for proposal generation")
+@click.option(
+    "--model", default=None, help="Override OpenAI model for proposal generation"
+)
 @click.option(
     "--coding-agent-model",
     default=None,
     help="Override coding-agent planning model (otherwise auto-selects best available)",
 )
-@click.option("--no-llm", is_flag=True, default=False, help="Force heuristic proposal generation")
+@click.option(
+    "--no-llm", is_flag=True, default=False, help="Force heuristic proposal generation"
+)
 @click.option(
     "--no-tracing",
     is_flag=True,
@@ -239,6 +248,13 @@ def coordinate(
     load_environment()
     setup_logging(level=log_level)
 
+    persisted_task_id: str | None = None
+    queue = None
+    project_id: str | None = None
+    project_name: str | None = None
+    project_preferences: dict[str, object] | None = None
+    project_instructions: str | None = None
+
     try:
         if no_tracing:
             os.environ["OPIK_TRACK_DISABLE"] = "true"
@@ -253,16 +269,71 @@ def coordinate(
         if enable_agent_exec:
             os.environ["CONVERGE_CODING_AGENT_EXEC_ENABLED"] = "true"
 
+        queue_settings = load_queue_settings()
+        if queue_settings.backend == "db" and queue_settings.sqlalchemy_database_uri:
+            queue = create_queue()
+            task_request = TaskRequest(
+                goal=goal,
+                repos=list(repos),
+                max_rounds=max_rounds,
+                agent_provider=coding_agent,
+                metadata={
+                    "source": "cli.coordinate",
+                    "hil_mode": hil_mode.lower(),
+                    "no_llm": no_llm,
+                    "output_dir": output_dir,
+                },
+            )
+            task = queue.enqueue(task_request)
+            persisted_task_id = task.id
+            project_id = task.project_id
+            project = queue.get_project(task.project_id)
+            project_name = project.name
+            project_preferences = project.preferences.model_dump()
+            project_instructions = project.default_instructions
+            queue.mark_running(task.id)
+            logger.info("Persisted CLI run as task: %s", task.id)
+        elif queue_settings.backend == "db":
+            logger.warning(
+                "SQLALCHEMY_DATABASE_URI is not set; running without task persistence"
+            )
+
         outcome = run_coordinate(
             goal=goal,
             repos=list(repos),
             max_rounds=max_rounds,
             agent_provider=coding_agent,
             base_output_dir=Path(output_dir),
+            thread_id=persisted_task_id,
+            project_id=project_id,
+            project_name=project_name,
+            project_preferences=project_preferences,
+            project_instructions=project_instructions,
         )
+
+        if queue is not None and persisted_task_id is not None:
+            if outcome.status == "FAILED":
+                queue.fail(persisted_task_id, outcome.summary[:500], retryable=False)
+            else:
+                result_status = (
+                    TaskStatus.HITL_REQUIRED
+                    if outcome.status == "HITL_REQUIRED"
+                    else TaskStatus.SUCCEEDED
+                )
+                queue.complete(
+                    persisted_task_id,
+                    TaskResult(
+                        status=result_status,
+                        summary=outcome.summary,
+                        artifacts_dir=outcome.artifacts_dir,
+                        hitl_questions=outcome.hitl_questions,
+                    ),
+                )
 
         logger.info("Status: %s", outcome.status)
         logger.info("Artifacts Location: %s", outcome.artifacts_dir)
+        if persisted_task_id is not None:
+            logger.info("Task ID: %s", persisted_task_id)
 
         if outcome.status == "HITL_REQUIRED":
             sys.exit(2)
@@ -272,6 +343,11 @@ def coordinate(
         logger.error("Configuration error: %s", exc)
         sys.exit(1)
     except Exception as exc:
+        if queue is not None and persisted_task_id is not None:
+            try:
+                queue.fail(persisted_task_id, str(exc)[:500], retryable=False)
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to mark persisted task as FAILED")
         logger.exception("Unexpected error during coordination: %s", exc)
         sys.exit(1)
 
@@ -284,12 +360,18 @@ def coordinate(
     default=False,
     help="Run one poll cycle and exit",
 )
-@click.option("--poll-interval", type=float, default=None, help="Polling interval in seconds")
-@click.option("--batch-size", type=int, default=None, help="Number of tasks to claim per cycle")
+@click.option(
+    "--poll-interval", type=float, default=None, help="Polling interval in seconds"
+)
+@click.option(
+    "--batch-size", type=int, default=None, help="Number of tasks to claim per cycle"
+)
 @click.option(
     "--log-level",
     default="INFO",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
+    type=click.Choice(
+        ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False
+    ),
     help="Logging level (default: INFO)",
 )
 def worker(
@@ -303,12 +385,18 @@ def worker(
         configure_opik()
         settings = load_queue_settings()
         if settings.backend == "db" and not settings.sqlalchemy_database_uri:
-            raise ValueError("SQLALCHEMY_DATABASE_URI is required when CONVERGE_QUEUE_BACKEND=db")
+            raise ValueError(
+                "SQLALCHEMY_DATABASE_URI is required when CONVERGE_QUEUE_BACKEND=db"
+            )
 
         worker_poll_interval = (
-            poll_interval if poll_interval is not None else settings.worker_poll_interval_seconds
+            poll_interval
+            if poll_interval is not None
+            else settings.worker_poll_interval_seconds
         )
-        worker_batch_size = batch_size if batch_size is not None else settings.worker_batch_size
+        worker_batch_size = (
+            batch_size if batch_size is not None else settings.worker_batch_size
+        )
 
         queue = create_queue()
         polling_worker = PollingWorker(
@@ -335,7 +423,9 @@ def worker(
 @click.option(
     "--log-level",
     default="INFO",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False),
+    type=click.Choice(
+        ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], case_sensitive=False
+    ),
     help="Logging level (default: INFO)",
 )
 def server(host: str | None, port: int | None, reload: bool, log_level: str) -> None:

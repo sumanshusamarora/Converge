@@ -23,6 +23,26 @@ This page is the authoritative user-facing configuration list.
 | `CONVERGE_WEBHOOK_MAX_BODY_BYTES` | `262144` | webhooks | Max payload size; larger payloads return `413`. |
 | `CONVERGE_WEBHOOK_IDEMPOTENCY_TTL_SECONDS` | `86400` | webhooks | Configured but currently informational only. |
 
+## Project defaults and preferences
+
+Project behavior is now primarily configured per-project (stored in DB), not via env vars.
+
+Default project preferences:
+- `planning_strategy=extend_existing`
+- `hitl_trigger_mode=blockers_only`
+- `max_hitl_questions=2`
+- `execution_flow=plan_then_execute`
+- `allow_custom_instructions_after_plan=true`
+- `enforce_existing_patterns=true`
+- `prefer_minimal_changes=true`
+- `require_best_practice_alignment=false`
+
+These values are managed through API/UI:
+- `GET /api/projects`
+- `GET /api/projects/default`
+- `POST /api/projects`
+- `PATCH /api/projects/{project_id}`
+
 ## Provider + proposal behavior
 
 | Variable | Default | When needed | Description |

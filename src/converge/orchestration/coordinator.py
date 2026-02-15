@@ -10,7 +10,10 @@ from typing import Any, cast
 
 from converge.core.config import ConvergeConfig
 from converge.observability.opik_client import track_langgraph_app
-from converge.orchestration.checkpointing import CheckpointerHandle, create_db_checkpointer
+from converge.orchestration.checkpointing import (
+    CheckpointerHandle,
+    create_db_checkpointer,
+)
 from converge.orchestration.graph import (
     build_coordinate_graph_conditional,
     build_coordinate_graph_interrupt,
@@ -68,6 +71,12 @@ class Coordinator:
             "contract_analysis": {},
             "agent_provider": self.config.agent_provider,
             "hitl_resolution": self.hitl_resolution,
+            "project_id": self.config.project_id,
+            "project_name": self.config.project_name,
+            "project_preferences": self.config.project_preferences,
+            "project_instructions": self.config.project_instructions,
+            "custom_instructions": self.config.custom_instructions,
+            "execute_immediately": self.config.execute_immediately,
         }
         try:
             final_state = self._invoke_graph(
@@ -95,7 +104,9 @@ class Coordinator:
             if checkpointer_enabled:
                 command = self._build_resume_command(self.hitl_resolution)
                 if command is not None:
-                    return cast(OrchestrationState, app.invoke(command, **invoke_kwargs))
+                    return cast(
+                        OrchestrationState, app.invoke(command, **invoke_kwargs)
+                    )
             logger.warning(
                 "HITL resolution provided but no checkpoint resume available; starting a fresh run"
             )
@@ -105,7 +116,9 @@ class Coordinator:
     def _build_graph_app(self) -> tuple[Any, CheckpointerHandle | None]:
         checkpointer_handle: CheckpointerHandle | None = None
         if self.thread_id:
-            checkpointer_handle = create_db_checkpointer(os.getenv("SQLALCHEMY_DATABASE_URI"))
+            checkpointer_handle = create_db_checkpointer(
+                os.getenv("SQLALCHEMY_DATABASE_URI")
+            )
             if checkpointer_handle is None and self.hitl_resolution:
                 logger.warning(
                     "No DB checkpointer available for thread_id=%s; resume will be best-effort",
